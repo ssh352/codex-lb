@@ -19,8 +19,14 @@ async def init_http_client() -> HttpClient:
     global _http_client
     if _http_client is not None:
         return _http_client
-    session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None))
-    retry_client = RetryClient(client_session=session, raise_for_status=False)
+
+    # Create ClientSession with trust_env=True to automatically use proxy settings
+    # from environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
+    session = aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=None),
+        trust_env=True  # Enable proxy support from environment variables
+    )
+    retry_client = RetryClient(client_session=session, raise_for_status=False, trust_env=True)
     _http_client = HttpClient(session=session, retry_client=retry_client)
     return _http_client
 
