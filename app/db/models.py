@@ -24,6 +24,7 @@ class Account(Base):
     __tablename__ = "accounts"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    chatgpt_account_id: Mapped[str | None] = mapped_column(String, nullable=True)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     plan_type: Mapped[str] = mapped_column(String, nullable=False)
 
@@ -40,6 +41,7 @@ class Account(Base):
         nullable=False,
     )
     deactivation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reset_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class UsageHistory(Base):
@@ -78,6 +80,36 @@ class RequestLog(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class StickySession(Base):
+    __tablename__ = "sticky_sessions"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class DashboardSettings(Base):
+    __tablename__ = "dashboard_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    sticky_threads_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    prefer_earlier_reset_accounts: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 Index("idx_usage_recorded_at", UsageHistory.recorded_at)
 Index("idx_usage_account_time", UsageHistory.account_id, UsageHistory.recorded_at)
 Index("idx_logs_account_time", RequestLog.account_id, RequestLog.requested_at)
+Index("idx_sticky_account", StickySession.account_id)

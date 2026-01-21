@@ -8,7 +8,13 @@ from typing import Awaitable, Callable, Final
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.migrations.versions import add_request_logs_reasoning_effort, normalize_account_plan_types
+from app.db.migrations.versions import (
+    add_accounts_chatgpt_account_id,
+    add_accounts_reset_at,
+    add_dashboard_settings,
+    add_request_logs_reasoning_effort,
+    normalize_account_plan_types,
+)
 
 _CREATE_MIGRATIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -21,6 +27,7 @@ _INSERT_MIGRATION = """
 INSERT INTO schema_migrations (name, applied_at)
 VALUES (:name, :applied_at)
 ON CONFLICT(name) DO NOTHING
+RETURNING name
 """
 
 
@@ -33,6 +40,9 @@ class Migration:
 MIGRATIONS: Final[tuple[Migration, ...]] = (
     Migration("001_normalize_account_plan_types", normalize_account_plan_types.run),
     Migration("002_add_request_logs_reasoning_effort", add_request_logs_reasoning_effort.run),
+    Migration("003_add_accounts_reset_at", add_accounts_reset_at.run),
+    Migration("004_add_accounts_chatgpt_account_id", add_accounts_chatgpt_account_id.run),
+    Migration("005_add_dashboard_settings", add_dashboard_settings.run),
 )
 
 
@@ -55,8 +65,8 @@ async def _apply_migration(session: AsyncSession, migration: Migration) -> bool:
                 "applied_at": _utcnow_iso(),
             },
         )
-        rowcount = getattr(result, "rowcount", 0) or 0
-        if not rowcount:
+        inserted = result.scalar_one_or_none()
+        if inserted is None:
             return False
         await migration.run(session)
     return True

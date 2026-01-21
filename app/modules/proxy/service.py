@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from datetime import timedelta
+from hashlib import sha256
 from typing import AsyncIterator, Mapping
 
 import anyio
@@ -14,13 +16,14 @@ from app.core.balancer.types import UpstreamError
 from app.core.clients.proxy import ProxyResponseError, filter_inbound_headers
 from app.core.clients.proxy import compact_responses as core_compact_responses
 from app.core.clients.proxy import stream_responses as core_stream_responses
+from app.core.config.settings import get_settings
 from app.core.crypto import TokenEncryptor
 from app.core.errors import openai_error, response_failed_event
 from app.core.openai.models import OpenAIResponsePayload
 from app.core.openai.parsing import parse_sse_event
 from app.core.openai.requests import ResponsesCompactRequest, ResponsesRequest
 from app.core.usage.types import UsageWindowRow
-from app.core.utils.request_id import ensure_request_id
+from app.core.utils.request_id import ensure_request_id, get_request_id
 from app.core.utils.sse import format_sse_event
 from app.core.utils.time import utcnow
 from app.db.models import Account, UsageHistory
@@ -42,8 +45,10 @@ from app.modules.proxy.helpers import (
     _window_snapshot,
 )
 from app.modules.proxy.load_balancer import LoadBalancer
+from app.modules.proxy.sticky_repository import StickySessionsRepository
 from app.modules.proxy.types import RateLimitStatusPayloadData
 from app.modules.request_logs.repository import RequestLogsRepository
+from app.modules.settings.repository import SettingsRepository
 from app.modules.usage.repository import UsageRepository
 from app.modules.usage.updater import UsageUpdater
 
@@ -56,13 +61,16 @@ class ProxyService:
         accounts_repo: AccountsRepository,
         usage_repo: UsageRepository,
         logs_repo: RequestLogsRepository,
+        sticky_repo: StickySessionsRepository,
+        settings_repo: SettingsRepository,
     ) -> None:
         self._accounts_repo = accounts_repo
         self._usage_repo = usage_repo
         self._logs_repo = logs_repo
+        self._settings_repo = settings_repo
         self._encryptor = TokenEncryptor()
         self._auth_manager = AuthManager(accounts_repo)
-        self._load_balancer = LoadBalancer(accounts_repo, usage_repo)
+        self._load_balancer = LoadBalancer(accounts_repo, usage_repo, sticky_repo)
         self._usage_updater = UsageUpdater(usage_repo, accounts_repo)
 
     def stream_responses(
@@ -72,6 +80,7 @@ class ProxyService:
         *,
         propagate_http_errors: bool = False,
     ) -> AsyncIterator[str]:
+        _maybe_log_proxy_request_shape("stream", payload, headers)
         filtered = filter_inbound_headers(headers)
         return self._stream_with_retry(
             payload,
@@ -84,8 +93,16 @@ class ProxyService:
         payload: ResponsesCompactRequest,
         headers: Mapping[str, str],
     ) -> OpenAIResponsePayload:
+        _maybe_log_proxy_request_shape("compact", payload, headers)
         filtered = filter_inbound_headers(headers)
-        selection = await self._load_balancer.select_account()
+        settings = await self._settings_repo.get_or_create()
+        prefer_earlier_reset = settings.prefer_earlier_reset_accounts
+        sticky_key = _sticky_key_from_compact_payload(payload) if settings.sticky_threads_enabled else None
+        selection = await self._load_balancer.select_account(
+            sticky_key=sticky_key,
+            reallocate_sticky=sticky_key is not None,
+            prefer_earlier_reset_accounts=prefer_earlier_reset,
+        )
         account = selection.account
         if not account:
             raise ProxyResponseError(
@@ -93,7 +110,7 @@ class ProxyService:
                 openai_error("no_accounts", selection.error_message or "No active accounts available"),
             )
         account = await self._ensure_fresh(account)
-        account_id = _header_account_id(account.id)
+        account_id = _header_account_id(account.chatgpt_account_id)
 
         async def _call_compact(target: Account) -> OpenAIResponsePayload:
             access_token = self._encryptor.decrypt(target.access_token_encrypted)
@@ -191,9 +208,15 @@ class ProxyService:
         propagate_http_errors: bool,
     ) -> AsyncIterator[str]:
         request_id = ensure_request_id()
+        settings = await self._settings_repo.get_or_create()
+        prefer_earlier_reset = settings.prefer_earlier_reset_accounts
+        sticky_key = _sticky_key_from_payload(payload) if settings.sticky_threads_enabled else None
         max_attempts = 3
         for attempt in range(max_attempts):
-            selection = await self._load_balancer.select_account()
+            selection = await self._load_balancer.select_account(
+                sticky_key=sticky_key,
+                prefer_earlier_reset_accounts=prefer_earlier_reset,
+            )
             account = selection.account
             if not account:
                 event = response_failed_event(
@@ -291,7 +314,7 @@ class ProxyService:
     ) -> AsyncIterator[str]:
         account_id_value = account.id
         access_token = self._encryptor.decrypt(account.access_token_encrypted)
-        account_id = _header_account_id(account_id_value)
+        account_id = _header_account_id(account.chatgpt_account_id)
         model = payload.model
         reasoning_effort = payload.reasoning.effort if payload.reasoning else None
         start = time.monotonic()
@@ -441,11 +464,8 @@ class ProxyService:
         await self._handle_stream_error(account, _upstream_error_from_openai(error), code)
 
     async def _handle_stream_error(self, account: Account, error: UpstreamError, code: str) -> None:
-        if code == "rate_limit_exceeded":
+        if code in {"rate_limit_exceeded", "usage_limit_reached"}:
             await self._load_balancer.mark_rate_limit(account, error)
-            return
-        if code == "usage_limit_reached":
-            await self._load_balancer.mark_quota_exceeded(account, error)
             return
         if code in {"insufficient_quota", "usage_not_included", "quota_exceeded"}:
             await self._load_balancer.mark_quota_exceeded(account, error)
@@ -461,3 +481,102 @@ class _RetryableStreamError(Exception):
         super().__init__(code)
         self.code = code
         self.error = error
+
+
+def _maybe_log_proxy_request_shape(
+    kind: str,
+    payload: ResponsesRequest | ResponsesCompactRequest,
+    headers: Mapping[str, str],
+) -> None:
+    settings = get_settings()
+    if not settings.log_proxy_request_shape:
+        return
+
+    request_id = get_request_id()
+    prompt_cache_key = getattr(payload, "prompt_cache_key", None)
+    if prompt_cache_key is None and payload.model_extra:
+        extra_value = payload.model_extra.get("prompt_cache_key")
+        if isinstance(extra_value, str):
+            prompt_cache_key = extra_value
+    prompt_cache_key_hash = _hash_identifier(prompt_cache_key) if isinstance(prompt_cache_key, str) else None
+    prompt_cache_key_raw = (
+        _truncate_identifier(prompt_cache_key)
+        if settings.log_proxy_request_shape_raw_cache_key and isinstance(prompt_cache_key, str)
+        else None
+    )
+
+    extra_keys = sorted(payload.model_extra.keys()) if payload.model_extra else []
+    fields_set = sorted(payload.model_fields_set)
+    input_summary = _summarize_input(payload.input)
+    header_keys = _interesting_header_keys(headers)
+
+    logger.warning(
+        "proxy_request_shape request_id=%s kind=%s model=%s stream=%s input=%s "
+        "prompt_cache_key=%s prompt_cache_key_raw=%s fields=%s extra=%s headers=%s",
+        request_id,
+        kind,
+        payload.model,
+        getattr(payload, "stream", None),
+        input_summary,
+        prompt_cache_key_hash,
+        prompt_cache_key_raw,
+        fields_set,
+        extra_keys,
+        header_keys,
+    )
+
+
+def _hash_identifier(value: str) -> str:
+    digest = sha256(value.encode("utf-8")).hexdigest()
+    return f"sha256:{digest[:12]}"
+
+
+def _summarize_input(items: Sequence[object]) -> str:
+    if not items:
+        return "0"
+    type_counts: dict[str, int] = {}
+    for item in items:
+        type_name = type(item).__name__
+        type_counts[type_name] = type_counts.get(type_name, 0) + 1
+    summary = ",".join(f"{key}={type_counts[key]}" for key in sorted(type_counts))
+    return f"{len(items)}({summary})"
+
+
+def _truncate_identifier(value: str, *, max_length: int = 96) -> str:
+    if len(value) <= max_length:
+        return value
+    return f"{value[:48]}...{value[-16:]}"
+
+
+def _interesting_header_keys(headers: Mapping[str, str]) -> list[str]:
+    allowlist = {
+        "user-agent",
+        "x-request-id",
+        "request-id",
+        "x-openai-client-id",
+        "x-openai-client-version",
+        "x-openai-client-arch",
+        "x-openai-client-os",
+        "x-openai-client-user-agent",
+        "x-codex-session-id",
+        "x-codex-conversation-id",
+    }
+    return sorted({key.lower() for key in headers.keys() if key.lower() in allowlist})
+
+
+def _sticky_key_from_payload(payload: ResponsesRequest) -> str | None:
+    value = payload.prompt_cache_key
+    if not value:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _sticky_key_from_compact_payload(payload: ResponsesCompactRequest) -> str | None:
+    if not payload.model_extra:
+        return None
+    value = payload.model_extra.get("prompt_cache_key")
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
