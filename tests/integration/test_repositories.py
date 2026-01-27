@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import select
 
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
@@ -28,6 +29,29 @@ def _make_account(account_id: str, email: str) -> Account:
         status=AccountStatus.ACTIVE,
         deactivation_reason=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_accounts_upsert_updates_existing_by_email(db_setup):
+    async with SessionLocal() as session:
+        repo = AccountsRepository(session)
+        await repo.upsert(_make_account("acc1", "dup@example.com"))
+
+        updated = _make_account("acc2", "dup@example.com")
+        updated.plan_type = "team"
+        updated.status = AccountStatus.PAUSED
+        updated.deactivation_reason = "reauth"
+        await repo.upsert(updated)
+
+        result = await session.execute(select(Account).where(Account.email == "dup@example.com"))
+        stored = result.scalar_one()
+        assert stored.id == "acc1"
+        assert stored.plan_type == "team"
+        assert stored.status == AccountStatus.PAUSED
+        assert stored.deactivation_reason == "reauth"
+
+        all_accounts = await session.execute(select(Account))
+        assert len(list(all_accounts.scalars().all())) == 1
 
 
 @pytest.mark.asyncio
@@ -79,10 +103,10 @@ async def test_request_logs_repository_filters(db_setup):
             requested_at=now - timedelta(minutes=5),
         )
 
-        results = await repo.list_recent(limit=0, account_id="acc1")
+        results = await repo.list_recent(limit=0, account_ids=["acc1"])
         assert len(results) == 1
         assert results[0].account_id == "acc1"
 
-        results = await repo.list_recent(limit=0, status="error")
+        results = await repo.list_recent(limit=0, include_success=False)
         assert len(results) == 1
         assert results[0].error_code == "rate_limit_exceeded"
