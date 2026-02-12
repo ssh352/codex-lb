@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     # Proxy selection snapshot TTL. Larger values reduce DB reads per request but may react slower to
     # usage changes. The snapshot is always invalidated on key error events (rate limit/quota/etc).
     proxy_snapshot_ttl_seconds: float = Field(default=1.0, gt=0)
+    # Proxy account selection strategy:
+    # - "usage": select lowest usage percent (default; existing behavior).
+    # - "reset_bucket": select earlier secondary reset bucket first.
+    # - "waste_pressure": select highest estimated secondary quota waste pressure first.
+    proxy_selection_strategy: Literal["usage", "reset_bucket", "waste_pressure"] = "usage"
 
     @field_validator("database_url")
     @classmethod

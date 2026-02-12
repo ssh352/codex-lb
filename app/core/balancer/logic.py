@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Literal
 
 from app.core.balancer.types import UpstreamError
 from app.core.utils.retry import backoff_seconds, parse_retry_after
 from app.db.models import AccountStatus
+
+type SelectionStrategy = Literal["usage", "reset_bucket", "waste_pressure"]
 
 PERMANENT_FAILURE_CODES = {
     "refresh_token_expired": "Refresh token expired - re-login required",
@@ -28,6 +30,7 @@ class AccountState:
     cooldown_until: float | None = None
     secondary_used_percent: float | None = None
     secondary_reset_at: int | None = None
+    secondary_capacity_credits: float | None = None
     last_error_at: float | None = None
     last_selected_at: float | None = None
     error_count: int = 0
@@ -45,6 +48,7 @@ def select_account(
     now: float | None = None,
     *,
     prefer_earlier_reset: bool = False,
+    strategy: SelectionStrategy | None = None,
 ) -> SelectionResult:
     current = now or time.time()
     available: list[AccountState] = []
@@ -119,7 +123,40 @@ def select_account(
         secondary_used, primary_used, last_selected, account_id = _usage_sort_key(state)
         return reset_bucket_days, secondary_used, primary_used, last_selected, account_id
 
-    selected = min(available, key=_reset_first_sort_key if prefer_earlier_reset else _usage_sort_key)
+    def _waste_pressure_sort_key(state: AccountState) -> tuple[float, float, float, float, str]:
+        secondary_capacity = float(state.secondary_capacity_credits or 0.0)
+        secondary_used = float(state.secondary_used_percent or 0.0)
+        secondary_remaining = secondary_capacity * max(0.0, 100.0 - secondary_used) / 100.0
+
+        if state.secondary_reset_at is not None:
+            time_to_reset = max(60.0, float(state.secondary_reset_at) - current)
+        else:
+            # When secondary reset is unknown (new account / no secondary usage history yet), assume
+            # a full secondary window so the account is eligible but not artificially "urgent".
+            time_to_reset = 7.0 * 24.0 * 60.0 * 60.0
+
+        pressure = (secondary_remaining / time_to_reset) if secondary_remaining > 0.0 else 0.0
+
+        primary_used = float(state.used_percent or 0.0)
+        primary_headroom = max(0.0, 100.0 - primary_used) / 100.0
+        success_factor = primary_headroom**2
+        health_factor = 1.0 / (1.0 + float(max(0, state.error_count)))
+
+        score = pressure * success_factor * health_factor
+        secondary_used_fallback, primary_used_fallback, last_selected, account_id = _usage_sort_key(state)
+        # Use negative score so min() selects the maximum score.
+        return -score, secondary_used_fallback, primary_used_fallback, last_selected, account_id
+
+    effective_strategy = strategy
+    if effective_strategy is None:
+        effective_strategy = "reset_bucket" if prefer_earlier_reset else "usage"
+
+    if effective_strategy == "waste_pressure":
+        selected = min(available, key=_waste_pressure_sort_key)
+    elif effective_strategy == "reset_bucket":
+        selected = min(available, key=_reset_first_sort_key)
+    else:
+        selected = min(available, key=_usage_sort_key)
     return SelectionResult(selected, None)
 
 

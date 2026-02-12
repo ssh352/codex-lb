@@ -165,6 +165,134 @@ def test_select_account_ignores_reset_when_disabled():
     assert result.account.account_id == "a"
 
 
+def test_select_account_waste_pressure_prefers_high_capacity_near_reset():
+    now = 1_700_000_000.0
+    states = [
+        AccountState(
+            "free",
+            AccountStatus.ACTIVE,
+            used_percent=0.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=180.0,
+        ),
+        AccountState(
+            "pro",
+            AccountStatus.ACTIVE,
+            used_percent=10.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=50_400.0,
+        ),
+    ]
+    result = select_account(states, now=now, strategy="waste_pressure")
+    assert result.account is not None
+    assert result.account.account_id == "pro"
+
+
+def test_select_account_waste_pressure_penalizes_low_primary_headroom():
+    now = 1_700_000_000.0
+    states = [
+        AccountState(
+            "free",
+            AccountStatus.ACTIVE,
+            used_percent=0.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=180.0,
+        ),
+        AccountState(
+            "pro",
+            AccountStatus.ACTIVE,
+            used_percent=99.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=50_400.0,
+        ),
+    ]
+    result = select_account(states, now=now, strategy="waste_pressure")
+    assert result.account is not None
+    assert result.account.account_id == "free"
+
+
+def test_select_account_waste_pressure_tiebreaks_by_usage_key():
+    now = 1_700_000_000.0
+    # Keep remaining credits equal to force score tie:
+    # - 1000 @ 50% => 500 remaining
+    # - 500 @ 0% => 500 remaining
+    states = [
+        AccountState(
+            "a",
+            AccountStatus.ACTIVE,
+            used_percent=0.0,
+            secondary_used_percent=50.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=1000.0,
+        ),
+        AccountState(
+            "b",
+            AccountStatus.ACTIVE,
+            used_percent=0.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=500.0,
+        ),
+    ]
+    result = select_account(states, now=now, strategy="waste_pressure")
+    assert result.account is not None
+    assert result.account.account_id == "b"
+
+
+def test_select_account_waste_pressure_prefers_known_reset_over_unknown_reset():
+    now = 1_700_000_000.0
+    states = [
+        AccountState(
+            "unknown",
+            AccountStatus.ACTIVE,
+            used_percent=0.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=None,
+            secondary_capacity_credits=180.0,
+        ),
+        AccountState(
+            "known",
+            AccountStatus.ACTIVE,
+            used_percent=0.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=180.0,
+        ),
+    ]
+    result = select_account(states, now=now, strategy="waste_pressure")
+    assert result.account is not None
+    assert result.account.account_id == "known"
+
+
+def test_select_account_waste_pressure_ignores_unknown_capacity_when_competing():
+    now = 1_700_000_000.0
+    states = [
+        AccountState(
+            "unknown_capacity",
+            AccountStatus.ACTIVE,
+            used_percent=0.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=None,
+        ),
+        AccountState(
+            "known_capacity",
+            AccountStatus.ACTIVE,
+            used_percent=0.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=180.0,
+        ),
+    ]
+    result = select_account(states, now=now, strategy="waste_pressure")
+    assert result.account is not None
+    assert result.account.account_id == "known_capacity"
+
+
 def test_select_account_skips_rate_limited_until_reset():
     now = 1_700_000_000.0
     states = [
