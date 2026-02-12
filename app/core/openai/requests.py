@@ -102,7 +102,7 @@ class ResponsesReasoning(BaseModel):
 
 
 class ResponsesTextFormat(BaseModel):
-    model_config = ConfigDict(extra="allow", populate_by_name=True, serialize_by_alias=True)
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     type: str | None = None
     strict: bool | None = None
@@ -196,7 +196,7 @@ class ResponsesRequest(BaseModel):
         return self
 
     def to_payload(self) -> JsonObject:
-        payload = self.model_dump(mode="json", exclude_none=True)
+        payload = self.model_dump(mode="json", exclude_none=True, by_alias=True)
         return _strip_unsupported_fields(payload)
 
 
@@ -222,7 +222,10 @@ class ResponsesCompactRequest(BaseModel):
         raise ValueError("input must be a string or array")
 
     def to_payload(self) -> JsonObject:
-        payload = self.model_dump(mode="json", exclude_none=True)
+        payload = self.model_dump(mode="json", exclude_none=True, by_alias=True)
+        # `prompt_cache_key` is codex-lb routing metadata (stickiness) and is not accepted by
+        # upstream `responses/compact`.
+        payload.pop("prompt_cache_key", None)
         return _strip_unsupported_fields(payload)
 
 

@@ -196,3 +196,17 @@ def test_v1_compact_input_string_passthrough():
     request = V1ResponsesCompactRequest.model_validate(payload).to_compact_request()
 
     assert request.input == [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}]
+
+
+def test_compact_prompt_cache_key_is_not_forwarded_upstream():
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": "ping",
+        "prompt_cache_key": "sticky",
+    }
+    request = ResponsesCompactRequest.model_validate(payload)
+
+    assert request.model_extra and request.model_extra["prompt_cache_key"] == "sticky"
+    dumped = request.to_payload()
+    assert "prompt_cache_key" not in dumped
