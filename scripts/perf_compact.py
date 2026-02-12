@@ -68,8 +68,7 @@ async def run(*, base_url: str, requests: int, concurrency: int, prompt_cache_ke
         f" p95={_percentile(latencies, 0.95) * 1000:.1f}"
         f" p99={_percentile(latencies, 0.99) * 1000:.1f}"
         f" min={latencies[0] * 1000:.1f}"
-        f" max={latencies[-1] * 1000:.1f}"
-        ,
+        f" max={latencies[-1] * 1000:.1f}",
         flush=True,
     )
 

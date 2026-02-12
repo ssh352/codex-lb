@@ -44,6 +44,7 @@ def _configure_sqlite_engine(engine: Engine, *, enable_wal: bool) -> None:
         finally:
             cursor.close()
 
+
 _MAIN_DATABASE_URL = _settings.database_url
 _ACCOUNTS_DATABASE_URL = _settings.accounts_database_url
 
@@ -111,6 +112,7 @@ def _ensure_sqlite_dir(url: str) -> None:
 async def _shielded(awaitable: Awaitable[_T]) -> _T:
     with anyio.CancelScope(shield=True):
         return await awaitable
+    raise AssertionError("unreachable")
 
 
 async def _safe_rollback(session: AsyncSession) -> None:
@@ -237,10 +239,14 @@ async def migrate_accounts_from_main_to_accounts_db(*, drop_legacy: bool = False
             return 0
 
         rows = (
-            await main_session.execute(
-                text(f"SELECT {', '.join(selected)} FROM accounts"),
+            (
+                await main_session.execute(
+                    text(f"SELECT {', '.join(selected)} FROM accounts"),
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         if not rows:
             return 0
 

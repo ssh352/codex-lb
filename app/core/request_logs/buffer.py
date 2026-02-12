@@ -84,4 +84,3 @@ def enqueue_request_log(entry: RequestLogCreate) -> bool:
         requested_at=entry.requested_at,
     )
     return get_request_log_buffer().try_enqueue(normalized)
-

@@ -190,7 +190,11 @@ async def test_v1_responses_without_instructions(async_client):
 
 @pytest.mark.asyncio
 async def test_v1_responses_non_streaming_failed_returns_error(async_client):
-    payload = {"model": "gpt-5.1", "input": "hi", "prompt_cache_key": "integration_v1_responses_non_streaming_no_accounts"}
+    payload = {
+        "model": "gpt-5.1",
+        "input": "hi",
+        "prompt_cache_key": "integration_v1_responses_non_streaming_no_accounts",
+    }
     resp = await async_client.post("/v1/responses", json=payload)
 
     assert resp.status_code == 503

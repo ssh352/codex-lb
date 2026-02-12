@@ -15,4 +15,3 @@ class AccountsDataRepository:
         await self._session.execute(delete(RequestLog).where(RequestLog.account_id == account_id))
         await self._session.execute(delete(StickySession).where(StickySession.account_id == account_id))
         await self._session.commit()
-

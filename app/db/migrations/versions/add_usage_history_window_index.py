@@ -18,4 +18,3 @@ async def run(session: AsyncSession) -> None:
             """
         )
     )
-

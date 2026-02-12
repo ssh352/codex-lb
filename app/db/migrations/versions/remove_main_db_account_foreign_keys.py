@@ -89,15 +89,9 @@ async def _sqlite_rebuild_without_foreign_keys(session: AsyncSession, table: str
 async def _ensure_indexes(session: AsyncSession) -> None:
     await session.execute(text("CREATE INDEX IF NOT EXISTS idx_usage_recorded_at ON usage_history (recorded_at)"))
     await session.execute(
-        text(
-            "CREATE INDEX IF NOT EXISTS idx_usage_account_time "
-            "ON usage_history (account_id, recorded_at)"
-        )
+        text("CREATE INDEX IF NOT EXISTS idx_usage_account_time ON usage_history (account_id, recorded_at)")
     )
     await session.execute(
-        text(
-            "CREATE INDEX IF NOT EXISTS idx_logs_account_time "
-            "ON request_logs (account_id, requested_at)"
-        )
+        text("CREATE INDEX IF NOT EXISTS idx_logs_account_time ON request_logs (account_id, requested_at)")
     )
     await session.execute(text("CREATE INDEX IF NOT EXISTS idx_sticky_account ON sticky_sessions (account_id)"))

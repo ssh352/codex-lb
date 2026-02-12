@@ -192,7 +192,12 @@ async def test_v1_responses_forwards_include_logprobs(async_client, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_v1_responses_rejects_invalid_include(async_client):
-    payload = {"model": "gpt-5.2", "input": "hi", "include": ["not_allowed"], "prompt_cache_key": "compat_bad_include_1"}
+    payload = {
+        "model": "gpt-5.2",
+        "input": "hi",
+        "include": ["not_allowed"],
+        "prompt_cache_key": "compat_bad_include_1",
+    }
     resp = await async_client.post("/v1/responses", json=payload)
     assert resp.status_code == 400
 

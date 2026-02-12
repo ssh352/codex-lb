@@ -91,4 +91,3 @@ def test_migrate_accounts_cli_copies_and_can_drop_legacy(tmp_path: Path) -> None
             "SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'",
         ).fetchone()
         assert row is None
-

@@ -145,10 +145,7 @@ class RequestLogsRepository:
                 search_conditions.append(RequestLog.account_id.in_(email_account_ids))
             conditions.append(or_(*search_conditions))
 
-        stmt = (
-            select(RequestLog)
-            .order_by(RequestLog.requested_at.desc())
-        )
+        stmt = select(RequestLog).order_by(RequestLog.requested_at.desc())
         if conditions:
             stmt = stmt.where(and_(*conditions))
         if offset:
