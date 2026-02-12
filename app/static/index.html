@@ -541,6 +541,19 @@
             </fieldset>
 
             <fieldset class="settings-fieldset">
+              <legend>Dashboard refresh</legend>
+              <input id="dashboard-auto-refresh-toggle" type="checkbox" x-model="autoRefresh.enabled"
+                aria-describedby="dashboard-auto-refresh-help">
+              <label for="dashboard-auto-refresh-toggle">Auto-refresh dashboard data (no page reload)</label>
+              <div id="dashboard-auto-refresh-help" class="text-muted" style="margin-top: 6px">
+                Interval:
+                <input id="dashboard-auto-refresh-interval" type="number" min="10" max="600" step="5"
+                  x-model.number="autoRefresh.intervalSeconds" style="width: 90px">
+                seconds.
+              </div>
+            </fieldset>
+
+            <fieldset class="settings-fieldset">
               <legend>TOTP access control</legend>
               <input id="totp-required-toggle" type="checkbox" x-model="settings.totpRequiredOnLogin"
                 :disabled="!settings.totpConfigured" aria-describedby="totp-required-help">

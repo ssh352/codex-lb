@@ -1,6 +1,7 @@
 (() => {
 	"use strict";
-		const API_ENDPOINTS = {
+
+	const API_ENDPOINTS = {
 		accounts: "/api/accounts",
 		accountsImport: "/api/accounts/import",
 		accountReactivate: (accountId) =>
@@ -21,11 +22,67 @@
 		dashboardAuthTotpSetupStart: "/api/dashboard-auth/totp/setup/start",
 		dashboardAuthTotpSetupConfirm: "/api/dashboard-auth/totp/setup/confirm",
 		dashboardAuthTotpDisable: "/api/dashboard-auth/totp/disable",
-			dashboardAuthLogout: "/api/dashboard-auth/logout",
-		};
-		const DASHBOARD_SETUP_TOKEN_HEADER = "X-Codex-LB-Setup-Token";
+		dashboardAuthLogout: "/api/dashboard-auth/logout",
+	};
 
-		const PAGES = [
+	const DASHBOARD_SETUP_TOKEN_HEADER = "X-Codex-LB-Setup-Token";
+	const AUTO_REFRESH_STORAGE_KEY = "codex_lb_dashboard_auto_refresh_v1";
+	const AUTO_REFRESH_DEFAULT_SECONDS = 30;
+	const AUTO_REFRESH_MIN_SECONDS = 10;
+	const AUTO_REFRESH_MAX_SECONDS = 600;
+
+	const normalizeAutoRefreshIntervalSeconds = (value) => {
+		const seconds = Math.round(Number(value));
+		if (!Number.isFinite(seconds)) {
+			return AUTO_REFRESH_DEFAULT_SECONDS;
+		}
+		return Math.min(
+			AUTO_REFRESH_MAX_SECONDS,
+			Math.max(AUTO_REFRESH_MIN_SECONDS, seconds),
+		);
+	};
+
+	const loadAutoRefreshPreferences = () => {
+		try {
+			const raw = localStorage.getItem(AUTO_REFRESH_STORAGE_KEY);
+			if (!raw) {
+				return {
+					enabled: true,
+					intervalSeconds: AUTO_REFRESH_DEFAULT_SECONDS,
+				};
+			}
+			const parsed = JSON.parse(raw);
+			return {
+				enabled: Boolean(parsed?.enabled ?? true),
+				intervalSeconds: normalizeAutoRefreshIntervalSeconds(
+					parsed?.intervalSeconds ?? AUTO_REFRESH_DEFAULT_SECONDS,
+				),
+			};
+		} catch {
+			return {
+				enabled: true,
+				intervalSeconds: AUTO_REFRESH_DEFAULT_SECONDS,
+			};
+		}
+	};
+
+	const saveAutoRefreshPreferences = (preferences) => {
+		try {
+			localStorage.setItem(
+				AUTO_REFRESH_STORAGE_KEY,
+				JSON.stringify({
+					enabled: Boolean(preferences?.enabled),
+					intervalSeconds: normalizeAutoRefreshIntervalSeconds(
+						preferences?.intervalSeconds,
+					),
+				}),
+			);
+		} catch {
+			// ignore storage errors (private mode, quota, etc.)
+		}
+	};
+
+	const PAGES = [
 		{
 			id: "dashboard",
 			tabId: "tab-dashboard",
@@ -1427,6 +1484,7 @@
 	};
 
 	const registerApp = () => {
+		const initialAutoRefresh = loadAutoRefreshPreferences();
 		Alpine.data("feApp", () => ({
 			view: "dashboard",
 			pages: createPages(),
@@ -1510,6 +1568,11 @@
 				pollTimerId: null,
 				countdownTimerId: null,
 			},
+			autoRefresh: {
+				enabled: initialAutoRefresh.enabled,
+				intervalSeconds: initialAutoRefresh.intervalSeconds,
+				timerId: null,
+			},
 			isLoading: true,
 			hasInitialized: false,
 			refreshPromise: null,
@@ -1542,6 +1605,14 @@
 					return;
 				}
 				await this.loadData();
+				this.$watch("autoRefresh.enabled", () => {
+					this.persistAutoRefresh();
+					this.syncAutoRefresh();
+				});
+				this.$watch("autoRefresh.intervalSeconds", () => {
+					this.persistAutoRefresh();
+					this.syncAutoRefresh();
+				});
 				if (this.view === "settings") {
 					this.ensureSettingsLoaded();
 				}
@@ -1553,9 +1624,21 @@
 					if (value === "settings") {
 						this.ensureSettingsLoaded();
 					}
+					this.syncAutoRefresh();
+				});
+				this.$watch("authDialog.open", () => {
+					this.syncAutoRefresh();
 				});
 				this.$watch("accounts.searchQuery", () => {
 					this.syncAccountSearchSelection();
+				});
+				window.addEventListener("visibilitychange", () => {
+					this.syncAutoRefresh();
+					if (document.visibilityState === "visible") {
+						this.refreshAll({ silent: true }).catch((error) => {
+							console.warn("[auto-refresh] refresh failed", error);
+						});
+					}
 				});
 				window.addEventListener("popstate", (event) => {
 					const newView =
@@ -1564,6 +1647,53 @@
 						this.view = newView;
 					}
 				});
+				this.syncAutoRefresh();
+			},
+
+			persistAutoRefresh() {
+				saveAutoRefreshPreferences({
+					enabled: this.autoRefresh.enabled,
+					intervalSeconds: this.autoRefresh.intervalSeconds,
+				});
+			},
+			stopAutoRefresh() {
+				if (this.autoRefresh.timerId) {
+					clearInterval(this.autoRefresh.timerId);
+					this.autoRefresh.timerId = null;
+				}
+			},
+			shouldAutoRefresh() {
+				if (!this.autoRefresh.enabled) {
+					return false;
+				}
+				if (document.visibilityState !== "visible") {
+					return false;
+				}
+				if (this.authDialog.open) {
+					return false;
+				}
+				return this.view === "dashboard" || this.view === "accounts";
+			},
+			syncAutoRefresh() {
+				this.stopAutoRefresh();
+				if (!this.shouldAutoRefresh()) {
+					return;
+				}
+				const normalizedSeconds = normalizeAutoRefreshIntervalSeconds(
+					this.autoRefresh.intervalSeconds,
+				);
+				if (this.autoRefresh.intervalSeconds !== normalizedSeconds) {
+					this.autoRefresh.intervalSeconds = normalizedSeconds;
+				}
+				const intervalMs = normalizedSeconds * 1000;
+				this.autoRefresh.timerId = window.setInterval(() => {
+					if (!this.shouldAutoRefresh()) {
+						return;
+					}
+					this.refreshAll({ silent: true }).catch((error) => {
+						console.warn("[auto-refresh] refresh failed", error);
+					});
+				}, intervalMs);
 			},
 
 			async refreshRequests() {
@@ -2597,17 +2727,29 @@
 					lastSync && lastSync.time && lastSync.time !== "--"
 						? `${lastSync.time} · ${lastSync.date}`
 						: "--";
+
+				const normalizedSeconds = normalizeAutoRefreshIntervalSeconds(
+					this.autoRefresh.intervalSeconds,
+				);
+				const autoRefreshLabel = !this.autoRefresh.enabled
+					? "off"
+					: this.shouldAutoRefresh()
+						? `${normalizedSeconds}s`
+						: "paused";
+
 				const items =
 					this.view === "accounts"
 						? [
 							`Selection: ${this.accounts.selectedId || "--"}`,
 							`Rotation: ${this.dashboardData.routing?.rotationEnabled ? "enabled" : "disabled"}`,
 							`Last sync: ${lastSyncLabel}`,
+							`Auto-refresh: ${autoRefreshLabel}`,
 						]
 						: [
 							`Last sync: ${lastSyncLabel}`,
 							`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
 							`Backend: ${this.backendPath}`,
+							`Auto-refresh: ${autoRefreshLabel}`,
 						];
 				if (this.importState.isLoading) {
 					items.unshift(
