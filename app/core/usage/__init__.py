@@ -22,6 +22,7 @@ PLAN_CAPACITY_CREDITS_PRIMARY = {
 }
 
 PLAN_CAPACITY_CREDITS_SECONDARY = {
+    "free": 180.0,
     "plus": 7560.0,
     "business": 7560.0,
     "team": 7560.0,
