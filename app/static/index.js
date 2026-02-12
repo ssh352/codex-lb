@@ -160,6 +160,7 @@
 	]);
 
 	const ROUTING_LABELS = {
+		waste_pressure: "waste pressure",
 		usage_weighted: "usage weighted",
 		round_robin: "round robin",
 		sticky: "sticky",
@@ -261,8 +262,7 @@
 	const createEmptyDashboardData = () => ({
 		lastSyncAt: "",
 		routing: {
-			strategy: "usage_weighted",
-			rotationEnabled: true,
+			strategy: "waste_pressure",
 		},
 		metrics: {
 			requests7d: 0,
@@ -823,8 +823,7 @@
 		return {
 			lastSyncAt: lastSyncAt || new Date().toISOString(),
 			routing: {
-				strategy: "usage_weighted",
-				rotationEnabled: true,
+				strategy: "waste_pressure",
 			},
 			metrics: {
 				requests7d,
@@ -1024,7 +1023,7 @@
 			{
 				title: "Active accounts",
 				value: `${statusCounts.active || 0} / ${accounts.length}`,
-				meta: `Rotation: ${routingLabel(state.dashboardData.routing?.strategy)}`,
+				meta: `Routing: ${routingLabel(state.dashboardData.routing?.strategy)}`,
 			},
 			{
 				title: "Error rate (7d)",
@@ -2436,8 +2435,8 @@
 					this.view === "accounts"
 						? [
 							`Selection: ${this.accounts.selectedId || "--"}`,
-							`Rotation: ${this.dashboardData.routing?.rotationEnabled ? "enabled" : "disabled"}`,
 							`Last sync: ${lastSyncLabel}`,
+							`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
 							`Auto-refresh: ${autoRefreshLabel}`,
 						]
 						: [
