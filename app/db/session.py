@@ -31,16 +31,27 @@ def _is_sqlite_memory_url(url: str) -> bool:
     return _is_sqlite_url(url) and ":memory:" in url
 
 
-def _configure_sqlite_engine(engine: Engine, *, enable_wal: bool) -> None:
+def _configure_sqlite_engine(engine: Engine, *, enable_wal: bool | None) -> None:
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(dbapi_connection: sqlite3.Connection, _: object) -> None:
         cursor: sqlite3.Cursor = dbapi_connection.cursor()
         try:
-            if enable_wal:
-                cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
+            if enable_wal is not None:
+                # Only attempt to change journal mode when needed. Switching journal modes can
+                # require exclusive locks; repeating it on every connection can create needless
+                # contention or failures under load.
+                desired = "wal" if enable_wal else "delete"
+                try:
+                    cursor.execute("PRAGMA journal_mode")
+                    current_mode = cursor.fetchone()
+                    normalized = (current_mode[0] if current_mode else "").strip().lower()
+                    if normalized != desired:
+                        cursor.execute(f"PRAGMA journal_mode={desired.upper()}")
+                except sqlite3.OperationalError:
+                    logger.warning("Failed to set sqlite journal_mode=%s (database may be locked)", desired)
             cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
         finally:
             cursor.close()
 
@@ -49,9 +60,14 @@ _MAIN_DATABASE_URL = _settings.database_url
 _ACCOUNTS_DATABASE_URL = _settings.accounts_database_url
 
 
-def _build_engine(url: str) -> AsyncEngine:
+def _build_engine(url: str, *, enable_wal: bool | None = None) -> AsyncEngine:
     if _is_sqlite_url(url):
         is_sqlite_memory = _is_sqlite_memory_url(url)
+        resolved_enable_wal: bool | None
+        if is_sqlite_memory:
+            resolved_enable_wal = None
+        else:
+            resolved_enable_wal = True if enable_wal is None else enable_wal
         if is_sqlite_memory:
             engine = create_async_engine(
                 url,
@@ -67,7 +83,7 @@ def _build_engine(url: str) -> AsyncEngine:
                 pool_timeout=_settings.database_pool_timeout_seconds,
                 connect_args={"timeout": _SQLITE_BUSY_TIMEOUT_SECONDS},
             )
-        _configure_sqlite_engine(engine.sync_engine, enable_wal=not is_sqlite_memory)
+        _configure_sqlite_engine(engine.sync_engine, enable_wal=resolved_enable_wal)
         return engine
 
     return create_async_engine(
@@ -82,7 +98,9 @@ def _build_engine(url: str) -> AsyncEngine:
 engine = _build_engine(_MAIN_DATABASE_URL)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
-accounts_engine = _build_engine(_ACCOUNTS_DATABASE_URL)
+# accounts.db is low-churn and may be placed on a synced path for roaming credentials across machines.
+# Rollback journaling (DELETE) avoids the WAL/SHM sidecar files that can desynchronize under file-sync tools.
+accounts_engine = _build_engine(_ACCOUNTS_DATABASE_URL, enable_wal=False)
 AccountsSessionLocal = async_sessionmaker(accounts_engine, expire_on_commit=False, class_=AsyncSession)
 
 _T = TypeVar("_T")

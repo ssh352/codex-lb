@@ -129,6 +129,40 @@ Files:
 
 To preserve authenticated accounts across machines, back up `accounts.db` and `encryption.key` (and optionally `store.db` if you want usage history/logs).
 
+### Using Codex from multiple machines at the same time (recommended)
+
+If you need simultaneous use from multiple machines, run a single `codex-lb` instance as the
+authority and have other machines connect to it. This avoids refresh-token rotation races because
+only the authority instance refreshes and persists tokens.
+
+In this topology, only the authority machine writes account tokens. `accounts.db` is still configured
+to use rollback journaling (`DELETE`) (no `-wal`/`-shm` sidecar files) because it also supports the
+separate “roaming via iCloud/Dropbox” workflow below.
+
+One simple option is SSH port forwarding (no config changes needed if your clients already point at
+`http://127.0.0.1:2455`):
+
+1. Start `codex-lb` on the authority machine (bind to loopback):
+   - `uvx codex-lb --host 127.0.0.1 --port 2455`
+2. On each client machine, forward the proxy port (and the OAuth callback port for adding accounts):
+   - `ssh -N -L 2455:127.0.0.1:2455 -L 1455:127.0.0.1:1455 <user>@<authority-host>`
+3. On the client, open `http://127.0.0.1:2455/dashboard` and use Codex normally.
+
+Notes:
+
+- Don’t run a local `codex-lb` on the client while the tunnel is active (ports 2455/1455 must be free).
+- The forwarded `1455` is required only for the OAuth “Add account” flow from the client machine.
+
+### Roaming `accounts.db` via iCloud/Dropbox (not for concurrent use)
+
+If you put `accounts.db` on a synced path to “roam” accounts between machines, treat it as
+best-effort backup/roaming. Do not run multiple `codex-lb` instances against the same synced DB.
+
+SQLite WAL uses `-wal`/`-shm` sidecar files, and file-sync tools are not a concurrency-safe database
+transport for those sidecars. For this reason, `accounts.db` uses rollback journaling (`DELETE`) to
+reduce file-sync hazards (but syncing can still be delayed/stale; wait for sync to finish before
+switching machines).
+
 ### Migrating from legacy single-DB installs
 
 If you previously used a single `store.db` that contained `accounts`, you can copy those rows into

@@ -24,3 +24,9 @@ an un-constrained string when split mode is enabled.
     remove foreign keys referencing `accounts`.
   - Provide a one-shot CLI command (`codex-lb migrate-accounts`) to copy legacy `accounts` rows from
     `store.db` into `accounts.db` (optional `--drop-legacy`).
+
+## SQLite journaling (ops)
+
+- Main DB (`store.db`) uses WAL journaling for write-heavy operational tables.
+- Accounts DB (`accounts.db`) uses rollback journaling (no WAL/SHM sidecar files) to reduce file-sync
+  desynchronization hazards when the goal is roaming accounts across machines via iCloud/Dropbox.

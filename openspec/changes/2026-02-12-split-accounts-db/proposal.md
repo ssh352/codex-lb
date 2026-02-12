@@ -14,6 +14,5 @@ want to sync the append-heavy tables.
 
 ## Non-goals
 
-- Cross-machine multi-writer support for the same SQLite file.
+- Cross-machine multi-writer support for the same SQLite file (including iCloud/Dropbox-synced paths).
 - Enforcing cross-database foreign keys (unsupported by SQLite).
-
