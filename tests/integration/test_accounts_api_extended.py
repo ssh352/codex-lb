@@ -10,7 +10,7 @@ from app.core.auth import fallback_account_id, generate_unique_account_id
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.usage.repository import UsageRepository
 
@@ -123,13 +123,13 @@ async def test_accounts_list_includes_per_account_reset_times(async_client, db_s
     secondary_a = 1736294400
     secondary_b = 1736380800
 
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
-
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_reset_a", "a@example.com"))
         await accounts_repo.upsert(_make_account("acc_reset_b", "b@example.com"))
 
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
         await usage_repo.add_entry(
             "acc_reset_a",
             10.0,

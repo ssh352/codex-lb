@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Account, AccountStatus, RequestLog, StickySession, UsageHistory
+from app.db.models import Account, AccountStatus
 
 
 class AccountsRepository:
@@ -17,6 +17,16 @@ class AccountsRepository:
     async def list_accounts(self) -> list[Account]:
         result = await self._session.execute(select(Account).order_by(Account.email))
         return list(result.scalars().all())
+
+    async def find_account_ids_by_email_search(self, search: str, *, limit: int = 5000) -> list[str]:
+        raw = (search or "").strip()
+        if not raw:
+            return []
+        pattern = f"%{raw}%"
+        result = await self._session.execute(
+            select(Account.id).where(Account.email.ilike(pattern)).order_by(Account.email).limit(limit)
+        )
+        return [row[0] for row in result.all() if row and row[0]]
 
     async def upsert(self, account: Account) -> Account:
         existing = await self._session.get(Account, account.id)
@@ -72,9 +82,6 @@ class AccountsRepository:
         return updated
 
     async def delete(self, account_id: str) -> bool:
-        await self._session.execute(delete(UsageHistory).where(UsageHistory.account_id == account_id))
-        await self._session.execute(delete(RequestLog).where(RequestLog.account_id == account_id))
-        await self._session.execute(delete(StickySession).where(StickySession.account_id == account_id))
         result = await self._session.execute(delete(Account).where(Account.id == account_id).returning(Account.id))
         await self._session.commit()
         return result.scalar_one_or_none() is not None
@@ -119,6 +126,7 @@ def _apply_account_updates(target: Account, source: Account) -> None:
     target.last_refresh = source.last_refresh
     target.status = source.status
     target.deactivation_reason = source.deactivation_reason
+    target.reset_at = source.reset_at
 
 
 @dataclass(frozen=True, slots=True)

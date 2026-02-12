@@ -7,7 +7,7 @@ import pytest
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.request_logs.repository import RequestLogsRepository
 from app.modules.usage.repository import UsageRepository
@@ -36,12 +36,13 @@ async def test_dashboard_overview_combines_data(async_client, db_setup):
     primary_time = now - timedelta(minutes=5)
     secondary_time = now - timedelta(minutes=2)
 
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(_make_account("acc_dash", "dash@example.com"))
+
     async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
         usage_repo = UsageRepository(session)
         logs_repo = RequestLogsRepository(session)
-
-        await accounts_repo.upsert(_make_account("acc_dash", "dash@example.com"))
         await usage_repo.add_entry(
             "acc_dash",
             20.0,

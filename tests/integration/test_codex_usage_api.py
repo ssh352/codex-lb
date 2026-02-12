@@ -5,7 +5,7 @@ import pytest
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.usage.repository import UsageRepository
 
@@ -29,13 +29,13 @@ def _make_account(account_id: str, email: str, plan_type: str = "plus") -> Accou
 
 @pytest.mark.asyncio
 async def test_codex_usage_aggregates_windows(async_client, db_setup):
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
-
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_a", "a@example.com"))
         await accounts_repo.upsert(_make_account("acc_b", "b@example.com"))
 
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
         await usage_repo.add_entry(
             "acc_a",
             10.0,
@@ -100,13 +100,13 @@ async def test_codex_usage_aggregates_windows(async_client, db_setup):
 
 @pytest.mark.asyncio
 async def test_codex_usage_header_ignored(async_client, db_setup):
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
-
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_a", "a@example.com"))
         await accounts_repo.upsert(_make_account("acc_b", "b@example.com"))
 
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
         await usage_repo.add_entry(
             "acc_a",
             10.0,

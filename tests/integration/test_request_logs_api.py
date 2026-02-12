@@ -7,7 +7,7 @@ import pytest
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.request_logs.repository import RequestLogsRepository
 
@@ -31,11 +31,12 @@ def _make_account(account_id: str, email: str) -> Account:
 
 @pytest.mark.asyncio
 async def test_request_logs_api_returns_recent(async_client, db_setup):
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_logs", "logs@example.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         now = utcnow()
         await logs_repo.add_log(
             account_id="acc_logs",

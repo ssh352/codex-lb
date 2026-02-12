@@ -123,10 +123,32 @@ Data storage locations:
 
 Files:
 
-- `store.db` – accounts, usage logs
+- `accounts.db` – accounts (encrypted tokens)
+- `store.db` – usage history, request logs, settings
 - `encryption.key` – encrypts tokens (auto-generated)
 
-Backup this directory to preserve your accounts.
+To preserve authenticated accounts across machines, back up `accounts.db` and `encryption.key` (and optionally `store.db` if you want usage history/logs).
+
+### Migrating from legacy single-DB installs
+
+If you previously used a single `store.db` that contained `accounts`, you can copy those rows into
+`accounts.db`:
+
+```bash
+codex-lb migrate-accounts
+```
+
+If you are running from a source checkout (without installing the package), invoke the CLI module directly:
+
+```bash
+./.venv/bin/python -m app.cli migrate-accounts
+```
+
+To also remove the legacy `accounts` table from `store.db` after a successful copy:
+
+```bash
+codex-lb migrate-accounts --drop-legacy
+```
 
 ## Contributors ✨
 

@@ -10,6 +10,7 @@ def test_import_session_with_sqlite_memory_url_does_not_error() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     env = os.environ.copy()
     env["CODEX_LB_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+    env["CODEX_LB_ACCOUNTS_DATABASE_URL"] = "sqlite+aiosqlite:///./accounts-test.db"
 
     result = subprocess.run(
         [sys.executable, "-c", "import app.db.session"],

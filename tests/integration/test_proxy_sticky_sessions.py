@@ -11,7 +11,7 @@ from app.core.crypto import TokenEncryptor
 from app.core.openai.models import OpenAIResponsePayload
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.usage.repository import UsageRepository
 
@@ -147,11 +147,13 @@ async def test_proxy_sticky_switches_when_pinned_rate_limited(async_client, monk
         deactivation_reason=None,
     )
 
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(acc_a)
         await accounts_repo.upsert(acc_b)
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
         await usage_repo.add_entry(
             account_id=acc_a.id,
             used_percent=10.0,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, Final
+from typing import Awaitable, Callable, Final, Literal
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.db.migrations.versions import (
     add_request_logs_reasoning_effort,
     add_usage_history_window_index,
     normalize_account_plan_types,
+    remove_main_db_account_foreign_keys,
 )
 
 _CREATE_MIGRATIONS_TABLE = """
@@ -36,24 +37,35 @@ RETURNING name
 @dataclass(frozen=True)
 class Migration:
     name: str
+    scope: Literal["main", "accounts", "both"]
     run: Callable[[AsyncSession], Awaitable[None]]
 
 
 MIGRATIONS: Final[tuple[Migration, ...]] = (
-    Migration("001_normalize_account_plan_types", normalize_account_plan_types.run),
-    Migration("002_add_request_logs_reasoning_effort", add_request_logs_reasoning_effort.run),
-    Migration("003_add_accounts_reset_at", add_accounts_reset_at.run),
-    Migration("004_add_accounts_chatgpt_account_id", add_accounts_chatgpt_account_id.run),
-    Migration("005_add_dashboard_settings", add_dashboard_settings.run),
-    Migration("006_add_dashboard_settings_totp", add_dashboard_settings_totp.run),
-    Migration("007_add_usage_history_window_index", add_usage_history_window_index.run),
+    Migration("001_normalize_account_plan_types", "accounts", normalize_account_plan_types.run),
+    Migration("002_add_request_logs_reasoning_effort", "main", add_request_logs_reasoning_effort.run),
+    Migration("003_add_accounts_reset_at", "accounts", add_accounts_reset_at.run),
+    Migration("004_add_accounts_chatgpt_account_id", "accounts", add_accounts_chatgpt_account_id.run),
+    Migration("005_add_dashboard_settings", "main", add_dashboard_settings.run),
+    Migration("006_add_dashboard_settings_totp", "main", add_dashboard_settings_totp.run),
+    Migration("007_add_usage_history_window_index", "main", add_usage_history_window_index.run),
+    Migration("008_remove_main_db_account_foreign_keys", "main", remove_main_db_account_foreign_keys.run),
 )
 
 
-async def run_migrations(session: AsyncSession) -> int:
+async def run_migrations(session: AsyncSession, *, role: Literal["single", "main", "accounts"] = "single") -> int:
     await _ensure_schema_migrations(session)
+    if role == "single":
+        migrations = MIGRATIONS
+    elif role == "main":
+        migrations = tuple(entry for entry in MIGRATIONS if entry.scope in {"main", "both"})
+    elif role == "accounts":
+        migrations = tuple(entry for entry in MIGRATIONS if entry.scope in {"accounts", "both"})
+    else:
+        raise ValueError("role must be 'single', 'main', or 'accounts'")
+
     applied_count = 0
-    for migration in MIGRATIONS:
+    for migration in migrations:
         applied_now = await _apply_migration(session, migration)
         if applied_now:
             applied_count += 1

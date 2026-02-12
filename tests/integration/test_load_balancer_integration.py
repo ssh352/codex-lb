@@ -9,7 +9,7 @@ import pytest
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.proxy.load_balancer import LoadBalancer
 from app.modules.proxy.repo_bundle import ProxyRepositories
@@ -23,13 +23,13 @@ pytestmark = pytest.mark.integration
 
 @asynccontextmanager
 async def _repo_factory() -> AsyncIterator[ProxyRepositories]:
-    async with SessionLocal() as session:
+    async with SessionLocal() as main_session, AccountsSessionLocal() as accounts_session:
         yield ProxyRepositories(
-            accounts=AccountsRepository(session),
-            usage=UsageRepository(session),
-            request_logs=RequestLogsRepository(session),
-            sticky_sessions=StickySessionsRepository(session),
-            settings=SettingsRepository(session),
+            accounts=AccountsRepository(accounts_session),
+            usage=UsageRepository(main_session),
+            request_logs=RequestLogsRepository(main_session),
+            sticky_sessions=StickySessionsRepository(main_session),
+            settings=SettingsRepository(main_session),
         )
 
 
@@ -64,9 +64,9 @@ async def test_load_balancer_skips_secondary_quota(db_setup):
         deactivation_reason=None,
     )
 
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
+    async with SessionLocal() as main_session, AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        usage_repo = UsageRepository(main_session)
         await accounts_repo.upsert(account_a)
         await accounts_repo.upsert(account_b)
 
@@ -105,9 +105,9 @@ async def test_load_balancer_skips_secondary_quota(db_setup):
         assert selection.account is not None
         assert selection.account.id == account_b.id
 
-        refreshed = await session.get(Account, account_a.id)
+        refreshed = await accounts_session.get(Account, account_a.id)
         assert refreshed is not None
-        await session.refresh(refreshed)
+        await accounts_session.refresh(refreshed)
         assert refreshed.status == AccountStatus.QUOTA_EXCEEDED
 
 
@@ -131,9 +131,9 @@ async def test_load_balancer_reactivates_after_secondary_reset(db_setup):
         deactivation_reason=None,
     )
 
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
+    async with SessionLocal() as main_session, AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        usage_repo = UsageRepository(main_session)
         await accounts_repo.upsert(account)
 
         await usage_repo.add_entry(
@@ -157,7 +157,7 @@ async def test_load_balancer_reactivates_after_secondary_reset(db_setup):
         assert selection.account is not None
         assert selection.account.id == account.id
 
-        refreshed = await session.get(Account, account.id)
+        refreshed = await accounts_session.get(Account, account.id)
         assert refreshed is not None
-        await session.refresh(refreshed)
+        await accounts_session.refresh(refreshed)
         assert refreshed.status == AccountStatus.ACTIVE

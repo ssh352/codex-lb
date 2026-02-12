@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app.core.config.settings import get_settings
-from app.db.session import SessionLocal, _safe_close, _safe_rollback
+from app.db.session import AccountsSessionLocal, SessionLocal, _safe_close, _safe_rollback
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.usage.repository import UsageRepository
 from app.modules.usage.updater import UsageUpdater
@@ -49,10 +49,11 @@ class UsageRefreshScheduler:
 
     async def _refresh_once(self) -> None:
         async with self._lock:
-            session = SessionLocal()
+            main_session = SessionLocal()
+            accounts_session = AccountsSessionLocal()
             try:
-                usage_repo = UsageRepository(session)
-                accounts_repo = AccountsRepository(session)
+                usage_repo = UsageRepository(main_session)
+                accounts_repo = AccountsRepository(accounts_session)
                 latest_usage = await usage_repo.latest_by_account(window="primary")
                 accounts = await accounts_repo.list_accounts()
                 updater = UsageUpdater(usage_repo, accounts_repo)
@@ -60,9 +61,12 @@ class UsageRefreshScheduler:
             except Exception:
                 logger.exception("Usage refresh loop failed")
             finally:
-                if session.in_transaction():
-                    await _safe_rollback(session)
-                await _safe_close(session)
+                if main_session.in_transaction():
+                    await _safe_rollback(main_session)
+                if accounts_session.in_transaction():
+                    await _safe_rollback(accounts_session)
+                await _safe_close(main_session)
+                await _safe_close(accounts_session)
 
 
 def build_usage_refresh_scheduler() -> UsageRefreshScheduler:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.modules.accounts.repository import AccountsRepository
 from app.modules.request_logs.mappers import (
     QUOTA_CODES,
     RATE_LIMIT_CODES,
@@ -33,8 +34,9 @@ class RequestLogFilterOptions:
 
 
 class RequestLogsService:
-    def __init__(self, repo: RequestLogsRepository) -> None:
+    def __init__(self, repo: RequestLogsRepository, *, accounts_repo: AccountsRepository | None = None) -> None:
         self._repo = repo
+        self._accounts_repo = accounts_repo
 
     async def list_recent(
         self,
@@ -50,10 +52,14 @@ class RequestLogsService:
         status: list[str] | None = None,
     ) -> list[RequestLogEntry]:
         status_filter = _map_status_filter(status)
+        search_account_ids: list[str] | None = None
+        if search and self._accounts_repo is not None:
+            search_account_ids = await self._accounts_repo.find_account_ids_by_email_search(search)
         logs = await self._repo.list_recent(
             limit=limit,
             offset=offset,
             search=search,
+            search_account_ids=search_account_ids,
             since=since,
             until=until,
             account_ids=account_ids,

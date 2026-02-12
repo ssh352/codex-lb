@@ -7,7 +7,7 @@ import pytest
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.request_logs.repository import RequestLogsRepository
 from app.modules.usage.repository import UsageRepository
@@ -33,8 +33,8 @@ def _make_account(account_id: str, email: str) -> Account:
 
 @pytest.mark.asyncio
 async def test_usage_summary_cost_includes_cached_tokens(db_setup):
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
+    async with SessionLocal() as session, AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         logs_repo = RequestLogsRepository(session)
         usage_repo = UsageRepository(session)
         service = UsageService(usage_repo, logs_repo, accounts_repo)
@@ -68,8 +68,8 @@ async def test_usage_summary_cost_includes_cached_tokens(db_setup):
 
 @pytest.mark.asyncio
 async def test_usage_summary_metrics(db_setup):
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
+    async with SessionLocal() as session, AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         logs_repo = RequestLogsRepository(session)
         usage_repo = UsageRepository(session)
         service = UsageService(usage_repo, logs_repo, accounts_repo)

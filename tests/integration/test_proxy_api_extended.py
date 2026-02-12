@@ -10,7 +10,7 @@ import app.modules.proxy.service as proxy_module
 from app.core.auth import generate_unique_account_id
 from app.core.clients.proxy import ProxyResponseError
 from app.db.models import Account, AccountStatus, RequestLog
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 
 pytestmark = pytest.mark.integration
 
@@ -181,7 +181,7 @@ async def test_proxy_stream_retries_rate_limit_then_success(async_client, monkey
         assert by_account[expected_account_id_1].error_message == "slow down"
         assert by_account[expected_account_id_2].status == "success"
 
-    async with SessionLocal() as session:
+    async with AccountsSessionLocal() as session:
         acc1 = await session.get(Account, expected_account_id_1)
         acc2 = await session.get(Account, expected_account_id_2)
         assert acc1 is not None
@@ -219,7 +219,7 @@ async def test_proxy_stream_usage_limit_returns_http_error(async_client, monkeyp
     assert error["plan_type"] == "plus"
     assert error["resets_at"] == 1767612327
 
-    async with SessionLocal() as session:
+    async with AccountsSessionLocal() as session:
         acc = await session.get(Account, expected_account_id)
         assert acc is not None
         assert acc.status == AccountStatus.RATE_LIMITED

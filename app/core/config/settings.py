@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -31,6 +31,7 @@ def _default_oauth_callback_host() -> str:
 
 DEFAULT_HOME_DIR = _default_home_dir()
 DEFAULT_DB_PATH = DEFAULT_HOME_DIR / "store.db"
+DEFAULT_ACCOUNTS_DB_PATH = DEFAULT_HOME_DIR / "accounts.db"
 DEFAULT_ENCRYPTION_KEY_FILE = DEFAULT_HOME_DIR / "encryption.key"
 
 
@@ -43,6 +44,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = f"sqlite+aiosqlite:///{DEFAULT_DB_PATH}"
+    accounts_database_url: str = f"sqlite+aiosqlite:///{DEFAULT_ACCOUNTS_DB_PATH}"
     database_pool_size: int = Field(default=15, gt=0)
     database_max_overflow: int = Field(default=10, ge=0)
     database_pool_timeout_seconds: float = Field(default=30.0, gt=0)
@@ -96,6 +98,25 @@ class Settings(BaseSettings):
                 if path.startswith("~"):
                     return f"{prefix}{Path(path).expanduser()}"
         return value
+
+    @field_validator("accounts_database_url")
+    @classmethod
+    def _expand_accounts_database_url(cls, value: str) -> str:
+        for prefix in ("sqlite+aiosqlite:///", "sqlite:///"):
+            if value.startswith(prefix):
+                path = value[len(prefix) :]
+                if path.startswith("~"):
+                    return f"{prefix}{Path(path).expanduser()}"
+        return value
+
+    @model_validator(mode="after")
+    def _validate_split_db(self) -> Settings:
+        if self.accounts_database_url == self.database_url:
+            raise ValueError(
+                "accounts_database_url must be different from database_url "
+                "(split accounts DB is required)"
+            )
+        return self
 
     @field_validator("encryption_key_file", mode="before")
     @classmethod

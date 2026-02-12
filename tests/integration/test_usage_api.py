@@ -7,7 +7,7 @@ import pytest
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.usage.repository import UsageRepository
 
@@ -63,13 +63,13 @@ async def test_usage_summary_empty_returns_zeroes(async_client):
 @pytest.mark.asyncio
 async def test_usage_history_aggregates_per_account(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
-
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_a", "a@example.com"))
         await accounts_repo.upsert(_make_account("acc_b", "b@example.com"))
 
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
         await usage_repo.add_entry("acc_a", 10.0, recorded_at=now - timedelta(hours=3))
         await usage_repo.add_entry("acc_a", 30.0, recorded_at=now - timedelta(hours=2))
 
@@ -94,11 +94,12 @@ async def test_usage_history_aggregates_per_account(async_client, db_setup):
 @pytest.mark.asyncio
 async def test_usage_window_secondary_uses_latest_window_minutes(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
-
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_sec", "sec@example.com"))
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
         await usage_repo.add_entry(
             "acc_sec",
             40.0,
@@ -123,11 +124,12 @@ async def test_usage_window_secondary_uses_latest_window_minutes(async_client, d
 @pytest.mark.asyncio
 async def test_usage_history_team_plan_has_capacity(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        usage_repo = UsageRepository(session)
-
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_team", "team@example.com", plan_type="team"))
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
         await usage_repo.add_entry(
             "acc_team",
             20.0,

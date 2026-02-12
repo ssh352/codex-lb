@@ -11,6 +11,7 @@ from app.core.crypto import TokenEncryptor
 from app.core.plan_types import coerce_account_plan_type
 from app.core.utils.time import to_utc_naive, utcnow
 from app.db.models import Account, AccountStatus
+from app.modules.accounts.data_repository import AccountsDataRepository
 from app.modules.accounts.list_cache import (
     get_or_build_accounts_list,
     invalidate_accounts_list_cache,
@@ -29,9 +30,11 @@ class AccountsService:
     def __init__(
         self,
         repo: AccountsRepository,
+        data_repo: AccountsDataRepository | None = None,
         usage_repo: UsageRepository | None = None,
     ) -> None:
         self._repo = repo
+        self._data_repo = data_repo
         self._usage_repo = usage_repo
         self._usage_updater = UsageUpdater(usage_repo, repo) if usage_repo else None
         self._encryptor = TokenEncryptor()
@@ -107,6 +110,8 @@ class AccountsService:
         return success
 
     async def delete_account(self, account_id: str) -> bool:
+        if self._data_repo is not None:
+            await self._data_repo.delete_account_data(account_id)
         success = await self._repo.delete(account_id)
         if success:
             type(self).invalidate_cache()

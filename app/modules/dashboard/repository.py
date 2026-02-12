@@ -11,10 +11,10 @@ from app.modules.usage.repository import UsageRepository
 
 
 class DashboardRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self._accounts_repo = AccountsRepository(session)
-        self._usage_repo = UsageRepository(session)
-        self._logs_repo = RequestLogsRepository(session)
+    def __init__(self, *, main_session: AsyncSession, accounts_session: AsyncSession) -> None:
+        self._accounts_repo = AccountsRepository(accounts_session)
+        self._usage_repo = UsageRepository(main_session)
+        self._logs_repo = RequestLogsRepository(main_session)
 
     async def list_accounts(self) -> list[Account]:
         return await self._accounts_repo.list_accounts()

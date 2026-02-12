@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.request_logs.repository import RequestLogsRepository
 from app.modules.usage.repository import UsageRepository
@@ -33,7 +33,7 @@ def _make_account(account_id: str, email: str) -> Account:
 
 @pytest.mark.asyncio
 async def test_accounts_upsert_updates_existing_by_email(db_setup):
-    async with SessionLocal() as session:
+    async with AccountsSessionLocal() as session:
         repo = AccountsRepository(session)
         await repo.upsert(_make_account("acc1", "dup@example.com"))
 
@@ -56,11 +56,12 @@ async def test_accounts_upsert_updates_existing_by_email(db_setup):
 
 @pytest.mark.asyncio
 async def test_usage_repository_aggregate(db_setup):
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        repo = UsageRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc1", "acc1@example.com"))
         await accounts_repo.upsert(_make_account("acc2", "acc2@example.com"))
+    async with SessionLocal() as session:
+        repo = UsageRepository(session)
         now = utcnow()
         await repo.add_entry("acc1", 10.0, recorded_at=now - timedelta(hours=1))
         await repo.add_entry("acc1", 30.0, recorded_at=now - timedelta(minutes=30))
@@ -74,11 +75,12 @@ async def test_usage_repository_aggregate(db_setup):
 
 @pytest.mark.asyncio
 async def test_usage_repository_latest_by_account_returns_latest_per_account(db_setup):
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        repo = UsageRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc1", "acc1@example.com"))
         await accounts_repo.upsert(_make_account("acc2", "acc2@example.com"))
+    async with SessionLocal() as session:
+        repo = UsageRepository(session)
         now = utcnow()
 
         await repo.add_entry("acc1", 10.0, recorded_at=now - timedelta(minutes=2), window=None)
@@ -107,11 +109,12 @@ async def test_usage_repository_latest_by_account_returns_latest_per_account(db_
 
 @pytest.mark.asyncio
 async def test_usage_repository_latest_primary_secondary_by_account(db_setup):
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        repo = UsageRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc1", "acc1@example.com"))
         await accounts_repo.upsert(_make_account("acc2", "acc2@example.com"))
+    async with SessionLocal() as session:
+        repo = UsageRepository(session)
         now = utcnow()
 
         await repo.add_entry("acc1", 10.0, recorded_at=now - timedelta(minutes=2), window=None)
@@ -133,10 +136,7 @@ async def test_usage_repository_latest_primary_secondary_by_account(db_setup):
 @pytest.mark.asyncio
 async def test_request_logs_repository_filters(db_setup):
     async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
         repo = RequestLogsRepository(session)
-        await accounts_repo.upsert(_make_account("acc1", "acc1@example.com"))
-        await accounts_repo.upsert(_make_account("acc2", "acc2@example.com"))
         now = utcnow()
         await repo.add_log(
             account_id="acc1",

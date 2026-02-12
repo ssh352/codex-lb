@@ -7,7 +7,7 @@ import pytest
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.request_logs.repository import RequestLogsRepository
 
@@ -37,11 +37,12 @@ def _cost(input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> floa
 @pytest.mark.asyncio
 async def test_request_logs_status_ok_filters_success(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_ok", "ok@example.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         await logs_repo.add_log(
             account_id="acc_ok",
             request_id="req_ok_1",
@@ -76,11 +77,12 @@ async def test_request_logs_status_ok_filters_success(async_client, db_setup):
 @pytest.mark.asyncio
 async def test_request_logs_status_rate_limit_filters_codes(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_rate", "rate@example.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         await logs_repo.add_log(
             account_id="acc_rate",
             request_id="req_rate_1",
@@ -115,11 +117,12 @@ async def test_request_logs_status_rate_limit_filters_codes(async_client, db_set
 @pytest.mark.asyncio
 async def test_request_logs_status_quota_filters_codes(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_quota", "quota@example.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         await logs_repo.add_log(
             account_id="acc_quota",
             request_id="req_quota_1",
@@ -176,11 +179,12 @@ async def test_request_logs_status_quota_filters_codes(async_client, db_setup):
 @pytest.mark.asyncio
 async def test_request_logs_filters_by_account_model_and_time(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_filter", "filter@example.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         await logs_repo.add_log(
             account_id="acc_filter",
             request_id="req_filter_1",
@@ -230,12 +234,13 @@ async def test_request_logs_filters_by_account_model_and_time(async_client, db_s
 @pytest.mark.asyncio
 async def test_request_logs_filters_by_multiple_accounts_returns_union(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_multi_a", "a@example.com"))
         await accounts_repo.upsert(_make_account("acc_multi_b", "b@example.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         await logs_repo.add_log(
             account_id="acc_multi_a",
             request_id="req_multi_1",
@@ -268,11 +273,12 @@ async def test_request_logs_filters_by_multiple_accounts_returns_union(async_cli
 @pytest.mark.asyncio
 async def test_request_logs_status_error_excludes_rate_limit_and_quota(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_err_only", "err-only@example.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         await logs_repo.add_log(
             account_id="acc_err_only",
             request_id="req_err_rate_limit",
@@ -319,11 +325,12 @@ async def test_request_logs_status_error_excludes_rate_limit_and_quota(async_cli
 @pytest.mark.asyncio
 async def test_request_logs_search_matches_email_and_error(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_search", "example@myemail.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         await logs_repo.add_log(
             account_id="acc_search",
             request_id="req_search_1",
@@ -357,11 +364,12 @@ async def test_request_logs_search_matches_email_and_error(async_client, db_setu
 @pytest.mark.asyncio
 async def test_request_logs_tokens_and_cost_use_reasoning_tokens(async_client, db_setup):
     now = utcnow()
-    async with SessionLocal() as session:
-        accounts_repo = AccountsRepository(session)
-        logs_repo = RequestLogsRepository(session)
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
         await accounts_repo.upsert(_make_account("acc_reason", "reason@example.com"))
 
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
         await logs_repo.add_log(
             account_id="acc_reason",
             request_id="req_reason_1",

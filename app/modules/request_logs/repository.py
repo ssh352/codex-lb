@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.utils.request_id import ensure_request_id
 from app.core.utils.time import utcnow
-from app.db.models import Account, RequestLog
+from app.db.models import RequestLog
 
 
 class RequestLogsRepository:
@@ -68,6 +68,7 @@ class RequestLogsRepository:
         limit: int = 50,
         offset: int = 0,
         search: str | None = None,
+        search_account_ids: list[str] | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
         account_ids: list[str] | None = None,
@@ -124,28 +125,28 @@ class RequestLogsRepository:
             conditions.append(or_(*status_conditions))
         if search:
             search_pattern = f"%{search}%"
-            conditions.append(
-                or_(
-                    RequestLog.account_id.ilike(search_pattern),
-                    Account.email.ilike(search_pattern),
-                    RequestLog.request_id.ilike(search_pattern),
-                    RequestLog.model.ilike(search_pattern),
-                    RequestLog.reasoning_effort.ilike(search_pattern),
-                    RequestLog.status.ilike(search_pattern),
-                    RequestLog.error_code.ilike(search_pattern),
-                    RequestLog.error_message.ilike(search_pattern),
-                    cast(RequestLog.requested_at, String).ilike(search_pattern),
-                    cast(RequestLog.input_tokens, String).ilike(search_pattern),
-                    cast(RequestLog.output_tokens, String).ilike(search_pattern),
-                    cast(RequestLog.cached_input_tokens, String).ilike(search_pattern),
-                    cast(RequestLog.reasoning_tokens, String).ilike(search_pattern),
-                    cast(RequestLog.latency_ms, String).ilike(search_pattern),
-                )
-            )
+            search_conditions = [
+                RequestLog.account_id.ilike(search_pattern),
+                RequestLog.request_id.ilike(search_pattern),
+                RequestLog.model.ilike(search_pattern),
+                RequestLog.reasoning_effort.ilike(search_pattern),
+                RequestLog.status.ilike(search_pattern),
+                RequestLog.error_code.ilike(search_pattern),
+                RequestLog.error_message.ilike(search_pattern),
+                cast(RequestLog.requested_at, String).ilike(search_pattern),
+                cast(RequestLog.input_tokens, String).ilike(search_pattern),
+                cast(RequestLog.output_tokens, String).ilike(search_pattern),
+                cast(RequestLog.cached_input_tokens, String).ilike(search_pattern),
+                cast(RequestLog.reasoning_tokens, String).ilike(search_pattern),
+                cast(RequestLog.latency_ms, String).ilike(search_pattern),
+            ]
+            email_account_ids = [value for value in (search_account_ids or []) if value]
+            if email_account_ids:
+                search_conditions.append(RequestLog.account_id.in_(email_account_ids))
+            conditions.append(or_(*search_conditions))
 
         stmt = (
             select(RequestLog)
-            .outerjoin(Account, Account.id == RequestLog.account_id)
             .order_by(RequestLog.requested_at.desc())
         )
         if conditions:

@@ -11,7 +11,7 @@ from app.core.clients.proxy import ProxyResponseError
 from app.core.openai.models import OpenAIResponsePayload
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.usage.repository import UsageRepository
 
 pytestmark = pytest.mark.integration
@@ -126,7 +126,7 @@ async def test_proxy_compact_usage_limit_marks_account(async_client, monkeypatch
     error = response.json()["error"]
     assert error["type"] == "usage_limit_reached"
 
-    async with SessionLocal() as session:
+    async with AccountsSessionLocal() as session:
         account = await session.get(Account, expected_account_id)
         assert account is not None
         assert account.status == AccountStatus.RATE_LIMITED

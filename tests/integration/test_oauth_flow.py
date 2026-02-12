@@ -12,7 +12,7 @@ from app.core.clients.oauth import DeviceCode, OAuthTokens
 from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal
 from app.modules.accounts.repository import AccountsRepository
 
 pytestmark = pytest.mark.integration
@@ -102,7 +102,7 @@ async def test_oauth_start_with_existing_account_marks_success(async_client):
         status=AccountStatus.ACTIVE,
         deactivation_reason=None,
     )
-    async with SessionLocal() as session:
+    async with AccountsSessionLocal() as session:
         repo = AccountsRepository(session)
         await repo.upsert(account)
 

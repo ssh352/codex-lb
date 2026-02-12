@@ -7,7 +7,7 @@ from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.migrations import MIGRATIONS, run_migrations
 from app.db.models import Account, AccountStatus
-from app.db.session import SessionLocal
+from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 
 pytestmark = pytest.mark.integration
@@ -30,17 +30,19 @@ def _make_account(account_id: str, email: str, plan_type: str) -> Account:
 
 @pytest.mark.asyncio
 async def test_run_migrations_preserves_unknown_plan_types(db_setup):
-    async with SessionLocal() as session:
+    async with AccountsSessionLocal() as session:
         repo = AccountsRepository(session)
         await repo.upsert(_make_account("acc_one", "one@example.com", "education"))
         await repo.upsert(_make_account("acc_two", "two@example.com", "PRO"))
         await repo.upsert(_make_account("acc_three", "three@example.com", ""))
 
     async with SessionLocal() as session:
-        applied = await run_migrations(session)
-        assert applied == len(MIGRATIONS)
+        applied_main = await run_migrations(session, role="main")
+    async with AccountsSessionLocal() as session:
+        applied_accounts = await run_migrations(session, role="accounts")
+    assert applied_main + applied_accounts == len(MIGRATIONS)
 
-    async with SessionLocal() as session:
+    async with AccountsSessionLocal() as session:
         acc_one = await session.get(Account, "acc_one")
         acc_two = await session.get(Account, "acc_two")
         acc_three = await session.get(Account, "acc_three")
@@ -52,5 +54,7 @@ async def test_run_migrations_preserves_unknown_plan_types(db_setup):
         assert acc_three.plan_type == DEFAULT_PLAN
 
     async with SessionLocal() as session:
-        applied = await run_migrations(session)
-        assert applied == 0
+        applied_main = await run_migrations(session, role="main")
+    async with AccountsSessionLocal() as session:
+        applied_accounts = await run_migrations(session, role="accounts")
+    assert applied_main + applied_accounts == 0
