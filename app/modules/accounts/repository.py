@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import delete, select, update
@@ -53,6 +55,22 @@ class AccountsRepository:
         await self._session.commit()
         return result.scalar_one_or_none() is not None
 
+    async def bulk_update_status_fields(self, updates: Sequence[AccountStatusUpdate]) -> int:
+        if not updates:
+            return 0
+        updated = 0
+        for entry in updates:
+            result = await self._session.execute(
+                update(Account)
+                .where(Account.id == entry.account_id)
+                .values(status=entry.status, deactivation_reason=entry.deactivation_reason)
+                .returning(Account.id)
+            )
+            if result.scalar_one_or_none() is not None:
+                updated += 1
+        await self._session.commit()
+        return updated
+
     async def delete(self, account_id: str) -> bool:
         await self._session.execute(delete(UsageHistory).where(UsageHistory.account_id == account_id))
         await self._session.execute(delete(RequestLog).where(RequestLog.account_id == account_id))
@@ -101,3 +119,10 @@ def _apply_account_updates(target: Account, source: Account) -> None:
     target.last_refresh = source.last_refresh
     target.status = source.status
     target.deactivation_reason = source.deactivation_reason
+
+
+@dataclass(frozen=True, slots=True)
+class AccountStatusUpdate:
+    account_id: str
+    status: AccountStatus
+    deactivation_reason: str | None

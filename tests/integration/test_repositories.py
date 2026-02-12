@@ -73,6 +73,64 @@ async def test_usage_repository_aggregate(db_setup):
 
 
 @pytest.mark.asyncio
+async def test_usage_repository_latest_by_account_returns_latest_per_account(db_setup):
+    async with SessionLocal() as session:
+        accounts_repo = AccountsRepository(session)
+        repo = UsageRepository(session)
+        await accounts_repo.upsert(_make_account("acc1", "acc1@example.com"))
+        await accounts_repo.upsert(_make_account("acc2", "acc2@example.com"))
+        now = utcnow()
+
+        await repo.add_entry("acc1", 10.0, recorded_at=now - timedelta(minutes=2), window=None)
+        await repo.add_entry("acc1", 20.0, recorded_at=now - timedelta(minutes=1), window="primary")
+        await repo.add_entry("acc1", 99.0, recorded_at=now - timedelta(minutes=3), window="secondary")
+
+        await repo.add_entry("acc2", 30.0, recorded_at=now - timedelta(minutes=5), window="primary")
+        await repo.add_entry("acc2", 40.0, recorded_at=now - timedelta(minutes=1), window="secondary")
+
+        latest_default = await repo.latest_by_account()
+        latest_primary = await repo.latest_by_account(window="primary")
+        latest_secondary = await repo.latest_by_account(window="secondary")
+
+        assert set(latest_default) == {"acc1", "acc2"}
+        assert set(latest_primary) == {"acc1", "acc2"}
+        assert set(latest_secondary) == {"acc1", "acc2"}
+
+        assert latest_default["acc1"].used_percent == pytest.approx(20.0)
+        assert latest_primary["acc1"].used_percent == pytest.approx(20.0)
+        assert latest_secondary["acc1"].used_percent == pytest.approx(99.0)
+
+        assert latest_default["acc2"].used_percent == pytest.approx(30.0)
+        assert latest_primary["acc2"].used_percent == pytest.approx(30.0)
+        assert latest_secondary["acc2"].used_percent == pytest.approx(40.0)
+
+
+@pytest.mark.asyncio
+async def test_usage_repository_latest_primary_secondary_by_account(db_setup):
+    async with SessionLocal() as session:
+        accounts_repo = AccountsRepository(session)
+        repo = UsageRepository(session)
+        await accounts_repo.upsert(_make_account("acc1", "acc1@example.com"))
+        await accounts_repo.upsert(_make_account("acc2", "acc2@example.com"))
+        now = utcnow()
+
+        await repo.add_entry("acc1", 10.0, recorded_at=now - timedelta(minutes=2), window=None)
+        await repo.add_entry("acc1", 20.0, recorded_at=now - timedelta(minutes=1), window="primary")
+        await repo.add_entry("acc1", 99.0, recorded_at=now - timedelta(minutes=3), window="secondary")
+
+        await repo.add_entry("acc2", 30.0, recorded_at=now - timedelta(minutes=5), window="primary")
+        await repo.add_entry("acc2", 40.0, recorded_at=now - timedelta(minutes=1), window="secondary")
+
+        primary, secondary = await repo.latest_primary_secondary_by_account()
+        assert set(primary) == {"acc1", "acc2"}
+        assert set(secondary) == {"acc1", "acc2"}
+        assert primary["acc1"].used_percent == pytest.approx(20.0)
+        assert secondary["acc1"].used_percent == pytest.approx(99.0)
+        assert primary["acc2"].used_percent == pytest.approx(30.0)
+        assert secondary["acc2"].used_percent == pytest.approx(40.0)
+
+
+@pytest.mark.asyncio
 async def test_request_logs_repository_filters(db_setup):
     async with SessionLocal() as session:
         accounts_repo = AccountsRepository(session)

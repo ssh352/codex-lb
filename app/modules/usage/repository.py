@@ -8,11 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.usage.types import UsageAggregateRow
 from app.core.utils.time import utcnow
 from app.db.models import UsageHistory
+from app.modules.proxy.rate_limit_cache import invalidate_rate_limit_headers_cache
 
 
 class UsageRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def commit(self) -> None:
+        await self._session.commit()
+        invalidate_rate_limit_headers_cache()
+
+    async def rollback(self) -> None:
+        await self._session.rollback()
 
     async def add_entry(
         self,
@@ -27,6 +35,8 @@ class UsageRepository:
         credits_has: bool | None = None,
         credits_unlimited: bool | None = None,
         credits_balance: float | None = None,
+        *,
+        commit: bool = True,
     ) -> UsageHistory:
         entry = UsageHistory(
             account_id=account_id,
@@ -42,8 +52,10 @@ class UsageRepository:
             recorded_at=recorded_at or utcnow(),
         )
         self._session.add(entry)
-        await self._session.commit()
-        await self._session.refresh(entry)
+        if commit:
+            await self._session.commit()
+            await self._session.refresh(entry)
+            invalidate_rate_limit_headers_cache()
         return entry
 
     async def aggregate_since(
@@ -88,20 +100,73 @@ class UsageRepository:
         ]
 
     async def latest_by_account(self, window: str | None = None) -> dict[str, UsageHistory]:
-        if window:
-            if window == "primary":
-                conditions = or_(UsageHistory.window == "primary", UsageHistory.window.is_(None))
-            else:
-                conditions = UsageHistory.window == window
+        if window and window != "primary":
+            conditions = UsageHistory.window == window
         else:
             conditions = or_(UsageHistory.window == "primary", UsageHistory.window.is_(None))
-        stmt = select(UsageHistory).where(conditions).order_by(UsageHistory.account_id, UsageHistory.recorded_at.desc())
+
+        ranked = (
+            select(
+                UsageHistory.id.label("id"),
+                func.row_number()
+                .over(
+                    partition_by=UsageHistory.account_id,
+                    order_by=(UsageHistory.recorded_at.desc(), UsageHistory.id.desc()),
+                )
+                .label("rn"),
+            )
+            .where(conditions)
+            .subquery()
+        )
+
+        stmt = (
+            select(UsageHistory)
+            .join(ranked, UsageHistory.id == ranked.c.id)
+            .where(ranked.c.rn == 1)
+            .order_by(UsageHistory.account_id)
+        )
         result = await self._session.execute(stmt)
-        latest: dict[str, UsageHistory] = {}
-        for entry in result.scalars().all():
-            if entry.account_id not in latest:
-                latest[entry.account_id] = entry
-        return latest
+        entries = list(result.scalars().all())
+        return {entry.account_id: entry for entry in entries}
+
+    async def latest_primary_secondary_by_account(
+        self,
+    ) -> tuple[dict[str, UsageHistory], dict[str, UsageHistory]]:
+        # Treat window=NULL as primary for historical compatibility.
+        window_key = func.coalesce(UsageHistory.window, "primary")
+
+        ranked = (
+            select(
+                UsageHistory.id.label("id"),
+                window_key.label("window_key"),
+                func.row_number()
+                .over(
+                    partition_by=(UsageHistory.account_id, window_key),
+                    order_by=(UsageHistory.recorded_at.desc(), UsageHistory.id.desc()),
+                )
+                .label("rn"),
+            )
+            .where(or_(UsageHistory.window.in_(("primary", "secondary")), UsageHistory.window.is_(None)))
+            .subquery()
+        )
+
+        stmt = (
+            select(UsageHistory, ranked.c.window_key)
+            .join(ranked, UsageHistory.id == ranked.c.id)
+            .where(ranked.c.rn == 1)
+            .order_by(UsageHistory.account_id)
+        )
+        result = await self._session.execute(stmt)
+
+        primary: dict[str, UsageHistory] = {}
+        secondary: dict[str, UsageHistory] = {}
+        for entry, window_value in result.all():
+            if window_value == "primary":
+                primary[entry.account_id] = entry
+            elif window_value == "secondary":
+                secondary[entry.account_id] = entry
+
+        return primary, secondary
 
     async def latest_window_minutes(self, window: str) -> int | None:
         if window == "primary":

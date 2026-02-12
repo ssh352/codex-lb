@@ -11,6 +11,10 @@ from app.core.crypto import TokenEncryptor
 from app.core.plan_types import coerce_account_plan_type
 from app.core.utils.time import to_utc_naive, utcnow
 from app.db.models import Account, AccountStatus
+from app.modules.accounts.list_cache import (
+    get_or_build_accounts_list,
+    invalidate_accounts_list_cache,
+)
 from app.modules.accounts.mappers import build_account_summaries
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.accounts.schemas import (
@@ -32,18 +36,28 @@ class AccountsService:
         self._usage_updater = UsageUpdater(usage_repo, repo) if usage_repo else None
         self._encryptor = TokenEncryptor()
 
+    @classmethod
+    def invalidate_cache(cls) -> None:
+        invalidate_accounts_list_cache()
+
     async def list_accounts(self) -> list[AccountSummary]:
-        accounts = await self._repo.list_accounts()
-        if not accounts:
-            return []
-        primary_usage = await self._usage_repo.latest_by_account(window="primary") if self._usage_repo else {}
-        secondary_usage = await self._usage_repo.latest_by_account(window="secondary") if self._usage_repo else {}
-        return build_account_summaries(
-            accounts=accounts,
-            primary_usage=primary_usage,
-            secondary_usage=secondary_usage,
-            encryptor=self._encryptor,
-        )
+        async def _build() -> list[AccountSummary]:
+            accounts = await self._repo.list_accounts()
+            if not accounts:
+                return []
+            if self._usage_repo:
+                primary_usage, secondary_usage = await self._usage_repo.latest_primary_secondary_by_account()
+            else:
+                primary_usage = {}
+                secondary_usage = {}
+            return build_account_summaries(
+                accounts=accounts,
+                primary_usage=primary_usage,
+                secondary_usage=secondary_usage,
+                encryptor=self._encryptor,
+            )
+
+        return await get_or_build_accounts_list(_build)
 
     async def import_account(self, raw: bytes) -> AccountImportResponse:
         auth = parse_auth_json(raw)
@@ -69,6 +83,7 @@ class AccountsService:
         )
 
         saved = await self._repo.upsert(account)
+        type(self).invalidate_cache()
         if self._usage_repo and self._usage_updater:
             latest_usage = await self._usage_repo.latest_by_account(window="primary")
             await self._usage_updater.refresh_accounts([saved], latest_usage)
@@ -80,10 +95,19 @@ class AccountsService:
         )
 
     async def reactivate_account(self, account_id: str) -> bool:
-        return await self._repo.update_status(account_id, AccountStatus.ACTIVE, None)
+        success = await self._repo.update_status(account_id, AccountStatus.ACTIVE, None)
+        if success:
+            type(self).invalidate_cache()
+        return success
 
     async def pause_account(self, account_id: str) -> bool:
-        return await self._repo.update_status(account_id, AccountStatus.PAUSED, None)
+        success = await self._repo.update_status(account_id, AccountStatus.PAUSED, None)
+        if success:
+            type(self).invalidate_cache()
+        return success
 
     async def delete_account(self, account_id: str) -> bool:
-        return await self._repo.delete(account_id)
+        success = await self._repo.delete(account_id)
+        if success:
+            type(self).invalidate_cache()
+        return success

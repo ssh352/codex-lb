@@ -23,6 +23,7 @@ from app.core.errors import openai_error, response_failed_event
 from app.core.openai.models import OpenAIResponsePayload
 from app.core.openai.parsing import parse_sse_event
 from app.core.openai.requests import ResponsesCompactRequest, ResponsesRequest
+from app.core.request_logs.buffer import RequestLogCreate, enqueue_request_log
 from app.core.types import JsonValue
 from app.core.usage.types import UsageWindowRow
 from app.core.utils.request_id import ensure_request_id, get_request_id
@@ -46,9 +47,9 @@ from app.modules.proxy.helpers import (
     _window_snapshot,
 )
 from app.modules.proxy.load_balancer import LoadBalancer
+from app.modules.proxy.rate_limit_cache import get_or_build_rate_limit_headers
 from app.modules.proxy.repo_bundle import ProxyRepoFactory, ProxyRepositories
 from app.modules.proxy.types import RateLimitStatusPayloadData
-from app.modules.usage.updater import UsageUpdater
 
 logger = logging.getLogger(__name__)
 
@@ -83,15 +84,10 @@ class ProxyService:
         _maybe_log_proxy_request_payload("compact", payload, headers)
         _maybe_log_proxy_request_shape("compact", payload, headers)
         filtered = filter_inbound_headers(headers)
-        async with self._repo_factory() as repos:
-            settings = await repos.settings.get_or_create()
-            prefer_earlier_reset = settings.prefer_earlier_reset_accounts
-            sticky_threads_enabled = settings.sticky_threads_enabled
-        sticky_key = _sticky_key_from_compact_payload(payload) if sticky_threads_enabled else None
+        sticky_key = _sticky_key_from_compact_payload(payload)
         selection = await self._load_balancer.select_account(
             sticky_key=sticky_key,
             reallocate_sticky=sticky_key is not None,
-            prefer_earlier_reset_accounts=prefer_earlier_reset,
         )
         account = selection.account
         if not account:
@@ -125,52 +121,54 @@ class ProxyService:
                 raise
 
     async def rate_limit_headers(self) -> dict[str, str]:
-        now = utcnow()
-        headers: dict[str, str] = {}
-        async with self._repo_factory() as repos:
-            accounts = await repos.accounts.list_accounts()
-            account_map = {account.id: account for account in accounts}
+        async def _build() -> dict[str, str]:
+            now = utcnow()
+            headers: dict[str, str] = {}
+            async with self._repo_factory() as repos:
+                accounts = await repos.accounts.list_accounts()
+                account_map = {account.id: account for account in accounts}
 
-            primary_minutes = await repos.usage.latest_window_minutes("primary")
-            if primary_minutes is None:
-                primary_minutes = usage_core.default_window_minutes("primary")
-            if primary_minutes:
-                primary_rows = await repos.usage.aggregate_since(
-                    now - timedelta(minutes=primary_minutes),
-                    window="primary",
-                )
-                if primary_rows:
-                    summary = usage_core.summarize_usage_window(
-                        [row.to_window_row() for row in primary_rows],
-                        account_map,
-                        "primary",
+                primary_minutes = await repos.usage.latest_window_minutes("primary")
+                if primary_minutes is None:
+                    primary_minutes = usage_core.default_window_minutes("primary")
+                if primary_minutes:
+                    primary_rows = await repos.usage.aggregate_since(
+                        now - timedelta(minutes=primary_minutes),
+                        window="primary",
                     )
-                    headers.update(_rate_limit_headers("primary", summary))
+                    if primary_rows:
+                        summary = usage_core.summarize_usage_window(
+                            [row.to_window_row() for row in primary_rows],
+                            account_map,
+                            "primary",
+                        )
+                        headers.update(_rate_limit_headers("primary", summary))
 
-            secondary_minutes = await repos.usage.latest_window_minutes("secondary")
-            if secondary_minutes is None:
-                secondary_minutes = usage_core.default_window_minutes("secondary")
-            if secondary_minutes:
-                secondary_rows = await repos.usage.aggregate_since(
-                    now - timedelta(minutes=secondary_minutes),
-                    window="secondary",
-                )
-                if secondary_rows:
-                    summary = usage_core.summarize_usage_window(
-                        [row.to_window_row() for row in secondary_rows],
-                        account_map,
-                        "secondary",
+                secondary_minutes = await repos.usage.latest_window_minutes("secondary")
+                if secondary_minutes is None:
+                    secondary_minutes = usage_core.default_window_minutes("secondary")
+                if secondary_minutes:
+                    secondary_rows = await repos.usage.aggregate_since(
+                        now - timedelta(minutes=secondary_minutes),
+                        window="secondary",
                     )
-                    headers.update(_rate_limit_headers("secondary", summary))
+                    if secondary_rows:
+                        summary = usage_core.summarize_usage_window(
+                            [row.to_window_row() for row in secondary_rows],
+                            account_map,
+                            "secondary",
+                        )
+                        headers.update(_rate_limit_headers("secondary", summary))
 
-            latest_usage = await repos.usage.latest_by_account()
-            headers.update(_credits_headers(latest_usage.values()))
-        return headers
+                latest_usage = await repos.usage.latest_by_account()
+                headers.update(_credits_headers(latest_usage.values()))
+            return headers
+
+        return await get_or_build_rate_limit_headers(_build)
 
     async def get_rate_limit_payload(self) -> RateLimitStatusPayloadData:
         async with self._repo_factory() as repos:
             accounts = await repos.accounts.list_accounts()
-            await self._refresh_usage(repos, accounts)
             selected_accounts = _select_accounts_for_limits(accounts)
             if not selected_accounts:
                 return RateLimitStatusPayloadData(plan_type="guest")
@@ -200,16 +198,11 @@ class ProxyService:
         propagate_http_errors: bool,
     ) -> AsyncIterator[str]:
         request_id = ensure_request_id()
-        async with self._repo_factory() as repos:
-            settings = await repos.settings.get_or_create()
-            prefer_earlier_reset = settings.prefer_earlier_reset_accounts
-            sticky_threads_enabled = settings.sticky_threads_enabled
-        sticky_key = _sticky_key_from_payload(payload) if sticky_threads_enabled else None
+        sticky_key = _sticky_key_from_payload(payload)
         max_attempts = 3
         for attempt in range(max_attempts):
             selection = await self._load_balancer.select_account(
                 sticky_key=sticky_key,
-                prefer_earlier_reset_accounts=prefer_earlier_reset,
             )
             account = selection.account
             if not account:
@@ -396,21 +389,40 @@ class ProxyService:
             )
             with anyio.CancelScope(shield=True):
                 try:
-                    async with self._repo_factory() as repos:
-                        await repos.request_logs.add_log(
-                            account_id=account_id_value,
-                            request_id=request_id,
-                            model=model,
-                            input_tokens=input_tokens,
-                            output_tokens=output_tokens,
-                            cached_input_tokens=cached_input_tokens,
-                            reasoning_tokens=reasoning_tokens,
-                            reasoning_effort=reasoning_effort,
-                            latency_ms=latency_ms,
-                            status=status,
-                            error_code=error_code,
-                            error_message=error_message,
+                    if get_settings().request_logs_buffer_enabled:
+                        enqueue_request_log(
+                            RequestLogCreate(
+                                account_id=account_id_value,
+                                request_id=request_id,
+                                model=model,
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                cached_input_tokens=cached_input_tokens,
+                                reasoning_tokens=reasoning_tokens,
+                                reasoning_effort=reasoning_effort,
+                                latency_ms=latency_ms,
+                                status=status,
+                                error_code=error_code,
+                                error_message=error_message,
+                                requested_at=utcnow(),
+                            )
                         )
+                    else:
+                        async with self._repo_factory() as repos:
+                            await repos.request_logs.add_log(
+                                account_id=account_id_value,
+                                request_id=request_id,
+                                model=model,
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                cached_input_tokens=cached_input_tokens,
+                                reasoning_tokens=reasoning_tokens,
+                                reasoning_effort=reasoning_effort,
+                                latency_ms=latency_ms,
+                                status=status,
+                                error_code=error_code,
+                                error_message=error_message,
+                            )
                 except Exception:
                     logger.warning(
                         "Failed to persist request log account_id=%s request_id=%s",
@@ -418,11 +430,6 @@ class ProxyService:
                         request_id,
                         exc_info=True,
                     )
-
-    async def _refresh_usage(self, repos: ProxyRepositories, accounts: list[Account]) -> None:
-        latest_usage = await repos.usage.latest_by_account(window="primary")
-        updater = UsageUpdater(repos.usage, repos.accounts)
-        await updater.refresh_accounts(accounts, latest_usage)
 
     async def _latest_usage_rows(
         self,

@@ -16,10 +16,13 @@ TEST_DB_PATH = TEST_DB_DIR / "codex-lb.db"
 os.environ["CODEX_LB_DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
 os.environ["CODEX_LB_UPSTREAM_BASE_URL"] = "https://example.invalid/backend-api"
 os.environ["CODEX_LB_USAGE_REFRESH_ENABLED"] = "false"
+os.environ["CODEX_LB_PROXY_SNAPSHOT_TTL_SECONDS"] = "0.0001"
+os.environ["CODEX_LB_REQUEST_LOGS_BUFFER_ENABLED"] = "false"
 
 from app.db.models import Base  # noqa: E402
 from app.db.session import engine  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.modules.accounts.list_cache import invalidate_accounts_list_cache  # noqa: E402
 
 
 @pytest_asyncio.fixture
@@ -29,6 +32,7 @@ async def app_instance():
         await conn.execute(text("DROP TABLE IF EXISTS schema_migrations"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    invalidate_accounts_list_cache()
     return app
 
 
@@ -44,6 +48,7 @@ async def db_setup():
         await conn.execute(text("DROP TABLE IF EXISTS schema_migrations"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    invalidate_accounts_list_cache()
     return True
 
 

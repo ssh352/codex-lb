@@ -40,3 +40,8 @@ app/static/components
 .codex-lb/
 
 .specstory/
+
+# Bench/perf artifacts
+.bench/
+errors
+error2

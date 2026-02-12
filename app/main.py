@@ -15,6 +15,7 @@ from app.core.middleware import (
     add_request_decompression_middleware,
     add_request_id_middleware,
 )
+from app.core.request_logs.flush_scheduler import build_request_logs_flush_scheduler
 from app.core.usage.refresh_scheduler import build_usage_refresh_scheduler
 from app.db.session import close_db, init_db
 from app.modules.accounts import api as accounts_api
@@ -33,11 +34,14 @@ async def lifespan(_: FastAPI):
     await init_db()
     await init_http_client()
     scheduler = build_usage_refresh_scheduler()
+    request_logs_flusher = build_request_logs_flush_scheduler()
     await scheduler.start()
+    await request_logs_flusher.start()
 
     try:
         yield
     finally:
+        await request_logs_flusher.stop()
         await scheduler.stop()
         try:
             await close_http_client()

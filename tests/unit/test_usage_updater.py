@@ -33,6 +33,12 @@ class StubUsageRepository:
     def __init__(self) -> None:
         self.entries: list[UsageEntry] = []
 
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
     async def add_entry(
         self,
         account_id: str,
@@ -46,6 +52,8 @@ class StubUsageRepository:
         credits_has: bool | None = None,
         credits_unlimited: bool | None = None,
         credits_balance: float | None = None,
+        *,
+        commit: bool = True,
     ) -> UsageHistory | None:
         self.entries.append(
             UsageEntry(

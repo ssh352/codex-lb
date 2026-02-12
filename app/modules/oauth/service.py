@@ -31,6 +31,7 @@ from app.core.crypto import TokenEncryptor
 from app.core.plan_types import coerce_account_plan_type
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
+from app.modules.accounts.list_cache import invalidate_accounts_list_cache
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.oauth.schemas import (
     OauthCompleteRequest,
@@ -319,6 +320,7 @@ class OauthService:
                 await repo.upsert(account)
         else:
             await self._accounts_repo.upsert(account)
+        invalidate_accounts_list_cache()
 
     async def _set_success(self) -> None:
         async with self._store.lock:

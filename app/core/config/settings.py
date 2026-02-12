@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     usage_fetch_max_retries: int = 2
     usage_refresh_enabled: bool = True
     usage_refresh_interval_seconds: int = Field(default=60, gt=0)
+    usage_refresh_fetch_concurrency: int = Field(default=20, gt=0)
     encryption_key_file: Path = DEFAULT_ENCRYPTION_KEY_FILE
     database_migrations_fail_fast: bool = True
     log_proxy_request_shape: bool = False
@@ -72,6 +73,19 @@ class Settings(BaseSettings):
     image_inline_fetch_enabled: bool = True
     image_inline_allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
     dashboard_setup_token: str | None = None
+    request_logs_buffer_enabled: bool = True
+    request_logs_buffer_maxsize: int = Field(default=5000, gt=0)
+    request_logs_flush_interval_seconds: float = Field(default=0.5, gt=0)
+    request_logs_flush_max_batch: int = Field(default=200, gt=0)
+    # Stickiness storage:
+    # - "memory": fastest, avoids DB writes on the proxy hot path, but is per-process and resets on restart.
+    # - "db": persists across restarts and works across multiple processes/workers, but adds DB write pressure.
+    sticky_sessions_backend: Literal["db", "memory"] = "memory"
+    sticky_sessions_memory_maxsize: int = Field(default=10_000, gt=0)
+    sticky_sessions_memory_ttl_seconds: float = Field(default=24 * 60 * 60, gt=0)
+    # Proxy selection snapshot TTL. Larger values reduce DB reads per request but may react slower to
+    # usage changes. The snapshot is always invalidated on key error events (rate limit/quota/etc).
+    proxy_snapshot_ttl_seconds: float = Field(default=1.0, gt=0)
 
     @field_validator("database_url")
     @classmethod

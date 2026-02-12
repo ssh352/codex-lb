@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -13,12 +15,12 @@ from app.core.balancer import (
     select_account,
 )
 from app.core.balancer.types import UpstreamError
+from app.core.config.settings import get_settings
 from app.core.usage.quota import apply_usage_quota
 from app.db.models import Account, UsageHistory
-from app.modules.accounts.repository import AccountsRepository
+from app.modules.accounts.repository import AccountsRepository, AccountStatusUpdate
 from app.modules.proxy.repo_bundle import ProxyRepoFactory
 from app.modules.proxy.sticky_repository import StickySessionsRepository
-from app.modules.usage.updater import UsageUpdater
 
 
 @dataclass
@@ -36,58 +38,77 @@ class AccountSelection:
     error_message: str | None
 
 
+@dataclass(slots=True)
+class _Snapshot:
+    accounts: list[Account]
+    latest_primary: dict[str, _UsageSnapshot]
+    latest_secondary: dict[str, _UsageSnapshot]
+    prefer_earlier_reset_accounts: bool
+    sticky_threads_enabled: bool
+    states: list[AccountState]
+    account_map: dict[str, Account]
+    updated_at: float
+
+
 class LoadBalancer:
     def __init__(self, repo_factory: ProxyRepoFactory) -> None:
         self._repo_factory = repo_factory
         self._runtime: dict[str, RuntimeState] = {}
+        self._snapshot_lock = asyncio.Lock()
+        self._snapshot: _Snapshot | None = None
+        self._snapshot_ttl_seconds = get_settings().proxy_snapshot_ttl_seconds
+        self._sticky_lock = asyncio.Lock()
+        self._sticky_memory: OrderedDict[str, _StickyEntry] = OrderedDict()
 
     async def select_account(
         self,
         sticky_key: str | None = None,
         *,
         reallocate_sticky: bool = False,
-        prefer_earlier_reset_accounts: bool = False,
     ) -> AccountSelection:
+        snapshot = await self._get_snapshot()
         selected_snapshot: Account | None = None
         error_message: str | None = None
-        async with self._repo_factory() as repos:
-            accounts = await repos.accounts.list_accounts()
-            latest_primary = await repos.usage.latest_by_account()
-            updater = UsageUpdater(repos.usage, repos.accounts)
-            await updater.refresh_accounts(accounts, latest_primary)
-            latest_primary = await repos.usage.latest_by_account()
-            latest_secondary = await repos.usage.latest_by_account(window="secondary")
+        if not snapshot.sticky_threads_enabled:
+            sticky_key = None
+            reallocate_sticky = False
 
-            states, account_map = _build_states(
-                accounts=accounts,
-                latest_primary=latest_primary,
-                latest_secondary=latest_secondary,
-                runtime=self._runtime,
-            )
-
-            result = await self._select_with_stickiness(
-                states=states,
-                account_map=account_map,
+        settings = get_settings()
+        sticky_backend = settings.sticky_sessions_backend
+        if sticky_key and sticky_backend == "db":
+            async with self._repo_factory() as repos:
+                result = await self._select_with_stickiness(
+                    states=snapshot.states,
+                    account_map=snapshot.account_map,
+                    sticky_key=sticky_key,
+                    reallocate_sticky=reallocate_sticky,
+                    prefer_earlier_reset_accounts=snapshot.prefer_earlier_reset_accounts,
+                    sticky_repo=repos.sticky_sessions,
+                )
+        elif sticky_key and sticky_backend == "memory":
+            result = await self._select_with_memory_stickiness(
+                states=snapshot.states,
+                account_map=snapshot.account_map,
                 sticky_key=sticky_key,
                 reallocate_sticky=reallocate_sticky,
-                prefer_earlier_reset_accounts=prefer_earlier_reset_accounts,
-                sticky_repo=repos.sticky_sessions,
+                prefer_earlier_reset_accounts=snapshot.prefer_earlier_reset_accounts,
             )
-            for state in states:
-                account = account_map.get(state.account_id)
-                if account:
-                    await self._sync_state(repos.accounts, account, state)
+        else:
+            result = select_account(
+                snapshot.states,
+                prefer_earlier_reset=snapshot.prefer_earlier_reset_accounts,
+            )
 
-            if result.account is None:
+        if result.account is None:
+            error_message = result.error_message
+        else:
+            selected = snapshot.account_map.get(result.account.account_id)
+            if selected is None:
                 error_message = result.error_message
             else:
-                selected = account_map.get(result.account.account_id)
-                if selected is None:
-                    error_message = result.error_message
-                else:
-                    selected.status = result.account.status
-                    selected.deactivation_reason = result.account.deactivation_reason
-                    selected_snapshot = _clone_account(selected)
+                selected.status = result.account.status
+                selected.deactivation_reason = result.account.deactivation_reason
+                selected_snapshot = _clone_account(selected)
 
         if selected_snapshot is None:
             return AccountSelection(account=None, error_message=error_message)
@@ -95,6 +116,56 @@ class LoadBalancer:
         runtime = self._runtime.setdefault(selected_snapshot.id, RuntimeState())
         runtime.last_selected_at = time.time()
         return AccountSelection(account=selected_snapshot, error_message=None)
+
+    async def get_snapshot_settings(self) -> tuple[bool, bool]:
+        snapshot = await self._get_snapshot()
+        return snapshot.prefer_earlier_reset_accounts, snapshot.sticky_threads_enabled
+
+    async def _get_snapshot(self) -> _Snapshot:
+        now = time.time()
+        snapshot = self._snapshot
+        if snapshot is not None and (now - snapshot.updated_at) < self._snapshot_ttl_seconds:
+            return snapshot
+
+        async with self._snapshot_lock:
+            now = time.time()
+            snapshot = self._snapshot
+            if snapshot is not None and (now - snapshot.updated_at) < self._snapshot_ttl_seconds:
+                return snapshot
+
+            async with self._repo_factory() as repos:
+                settings = await repos.settings.get_or_create()
+                prefer_earlier_reset_accounts = bool(settings.prefer_earlier_reset_accounts)
+                sticky_threads_enabled = bool(settings.sticky_threads_enabled)
+
+                accounts_orm = await repos.accounts.list_accounts()
+                latest_primary_orm, latest_secondary_orm = await repos.usage.latest_primary_secondary_by_account()
+
+                latest_primary = _usage_snapshots(latest_primary_orm)
+                latest_secondary = _usage_snapshots(latest_secondary_orm)
+
+                states, account_map = _build_states(
+                    accounts=accounts_orm,
+                    latest_primary=latest_primary,
+                    latest_secondary=latest_secondary,
+                    runtime=self._runtime,
+                )
+                await self._sync_usage_statuses(repos.accounts, account_map, states)
+                accounts = [_clone_account(account) for account in accounts_orm]
+                account_map = {account.id: account for account in accounts}
+
+            snapshot = _Snapshot(
+                accounts=accounts,
+                latest_primary=latest_primary,
+                latest_secondary=latest_secondary,
+                prefer_earlier_reset_accounts=prefer_earlier_reset_accounts,
+                sticky_threads_enabled=sticky_threads_enabled,
+                states=states,
+                account_map=account_map,
+                updated_at=now,
+            )
+            self._snapshot = snapshot
+            return snapshot
 
     async def _select_with_stickiness(
         self,
@@ -130,23 +201,56 @@ class LoadBalancer:
             await sticky_repo.upsert(sticky_key, chosen.account.account_id)
         return chosen
 
+    async def _select_with_memory_stickiness(
+        self,
+        *,
+        states: list[AccountState],
+        account_map: dict[str, Account],
+        sticky_key: str,
+        reallocate_sticky: bool,
+        prefer_earlier_reset_accounts: bool,
+    ) -> SelectionResult:
+        if reallocate_sticky:
+            chosen = select_account(states, prefer_earlier_reset=prefer_earlier_reset_accounts)
+            if chosen.account is not None and chosen.account.account_id in account_map:
+                await self._sticky_set(sticky_key, chosen.account.account_id)
+            return chosen
+
+        existing = await self._sticky_get(sticky_key)
+        if existing:
+            pinned = next((state for state in states if state.account_id == existing), None)
+            if pinned is None:
+                await self._sticky_delete(sticky_key)
+            else:
+                pinned_result = select_account([pinned], prefer_earlier_reset=prefer_earlier_reset_accounts)
+                if pinned_result.account is not None:
+                    return pinned_result
+
+        chosen = select_account(states, prefer_earlier_reset=prefer_earlier_reset_accounts)
+        if chosen.account is not None and chosen.account.account_id in account_map:
+            await self._sticky_set(sticky_key, chosen.account.account_id)
+        return chosen
+
     async def mark_rate_limit(self, account: Account, error: UpstreamError) -> None:
         state = self._state_for(account)
         handle_rate_limit(state, error)
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+        self._snapshot = None
 
     async def mark_quota_exceeded(self, account: Account, error: UpstreamError) -> None:
         state = self._state_for(account)
         handle_quota_exceeded(state, error)
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+        self._snapshot = None
 
     async def mark_permanent_failure(self, account: Account, error_code: str) -> None:
         state = self._state_for(account)
         handle_permanent_failure(state, error_code)
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+        self._snapshot = None
 
     async def record_error(self, account: Account) -> None:
         state = self._state_for(account)
@@ -154,14 +258,18 @@ class LoadBalancer:
         state.last_error_at = time.time()
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+        self._snapshot = None
 
     def _state_for(self, account: Account) -> AccountState:
         runtime = self._runtime.setdefault(account.id, RuntimeState())
+        reset_at = runtime.reset_at
+        if reset_at is None and account.reset_at:
+            reset_at = float(account.reset_at)
         return AccountState(
             account_id=account.id,
             status=account.status,
             used_percent=None,
-            reset_at=runtime.reset_at,
+            reset_at=reset_at,
             cooldown_until=runtime.cooldown_until,
             secondary_used_percent=None,
             secondary_reset_at=None,
@@ -199,12 +307,61 @@ class LoadBalancer:
             account.deactivation_reason = state.deactivation_reason
             account.reset_at = reset_at_int
 
+    async def _sync_usage_statuses(
+        self,
+        accounts_repo: AccountsRepository,
+        account_map: dict[str, Account],
+        states: Iterable[AccountState],
+    ) -> None:
+        updates: list[AccountStatusUpdate] = []
+        for state in states:
+            account = account_map.get(state.account_id)
+            if not account:
+                continue
+            if account.status != state.status or account.deactivation_reason != state.deactivation_reason:
+                updates.append(
+                    AccountStatusUpdate(
+                        account_id=account.id,
+                        status=state.status,
+                        deactivation_reason=state.deactivation_reason,
+                    )
+                )
+                account.status = state.status
+                account.deactivation_reason = state.deactivation_reason
+        if updates:
+            await accounts_repo.bulk_update_status_fields(updates)
+
+    async def _sticky_get(self, key: str) -> str | None:
+        now = time.time()
+        async with self._sticky_lock:
+            entry = self._sticky_memory.get(key)
+            if entry is None:
+                return None
+            if entry.expires_at <= now:
+                self._sticky_memory.pop(key, None)
+                return None
+            self._sticky_memory.move_to_end(key)
+            return entry.account_id
+
+    async def _sticky_set(self, key: str, account_id: str) -> None:
+        settings = get_settings()
+        expires_at = time.time() + settings.sticky_sessions_memory_ttl_seconds
+        async with self._sticky_lock:
+            self._sticky_memory[key] = _StickyEntry(account_id=account_id, expires_at=expires_at)
+            self._sticky_memory.move_to_end(key)
+            while len(self._sticky_memory) > settings.sticky_sessions_memory_maxsize:
+                self._sticky_memory.popitem(last=False)
+
+    async def _sticky_delete(self, key: str) -> None:
+        async with self._sticky_lock:
+            self._sticky_memory.pop(key, None)
+
 
 def _build_states(
     *,
     accounts: Iterable[Account],
-    latest_primary: dict[str, UsageHistory],
-    latest_secondary: dict[str, UsageHistory],
+    latest_primary: dict[str, _UsageSnapshot],
+    latest_secondary: dict[str, _UsageSnapshot],
     runtime: dict[str, RuntimeState],
 ) -> tuple[list[AccountState], dict[str, Account]]:
     states: list[AccountState] = []
@@ -225,8 +382,8 @@ def _build_states(
 def _state_from_account(
     *,
     account: Account,
-    primary_entry: UsageHistory | None,
-    secondary_entry: UsageHistory | None,
+    primary_entry: _UsageSnapshot | None,
+    secondary_entry: _UsageSnapshot | None,
     runtime: RuntimeState,
 ) -> AccountState:
     primary_used = primary_entry.used_percent if primary_entry else None
@@ -235,10 +392,8 @@ def _state_from_account(
     secondary_used = secondary_entry.used_percent if secondary_entry else None
     secondary_reset = secondary_entry.reset_at if secondary_entry else None
 
-    # Use account.reset_at from DB as the authoritative source for runtime reset
-    # This survives across requests since LoadBalancer is instantiated per-request
     db_reset_at = float(account.reset_at) if account.reset_at else None
-    effective_runtime_reset = db_reset_at or runtime.reset_at
+    effective_runtime_reset = runtime.reset_at or db_reset_at
 
     status, used_percent, reset_at = apply_usage_quota(
         status=account.status,
@@ -268,3 +423,27 @@ def _state_from_account(
 def _clone_account(account: Account) -> Account:
     data = {column.name: getattr(account, column.name) for column in Account.__table__.columns}
     return Account(**data)
+
+
+@dataclass(frozen=True, slots=True)
+class _UsageSnapshot:
+    used_percent: float
+    reset_at: int | None
+    window_minutes: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _StickyEntry:
+    account_id: str
+    expires_at: float
+
+
+def _usage_snapshots(entries: dict[str, UsageHistory]) -> dict[str, _UsageSnapshot]:
+    return {
+        account_id: _UsageSnapshot(
+            used_percent=entry.used_percent,
+            reset_at=entry.reset_at,
+            window_minutes=entry.window_minutes,
+        )
+        for account_id, entry in entries.items()
+    }
