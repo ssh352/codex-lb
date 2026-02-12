@@ -26,9 +26,10 @@ async def init_http_client() -> HttpClient:
     # Create ClientSession with trust_env=True to automatically use proxy settings
     # from environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
     settings = get_settings()
-    # aiohttp warns on Python 3.14+ that `enable_cleanup_closed` is ignored; avoid
-    # passing it there while preserving behavior on older runtimes.
-    if sys.version_info < (3, 14):
+    # `enable_cleanup_closed` is ignored on newer Python patch releases and
+    # triggers an aiohttp DeprecationWarning. Keep the option only on runtimes
+    # where it still has effect.
+    if sys.version_info < (3, 12, 12):
         connector = aiohttp.TCPConnector(
             limit=settings.http_client_connector_limit,
             limit_per_host=settings.http_client_connector_limit_per_host,
