@@ -85,15 +85,6 @@ class ProxyService:
         _maybe_log_proxy_request_shape("compact", payload, headers)
         filtered = filter_inbound_headers(headers)
         sticky_key = _sticky_key_from_compact_payload(payload)
-        if sticky_key is None:
-            raise ProxyResponseError(
-                400,
-                openai_error(
-                    "missing_prompt_cache_key",
-                    "Missing prompt_cache_key. Stickiness is required on this server.",
-                    error_type="invalid_request_error",
-                ),
-            )
         selection = await self._load_balancer.select_account(
             sticky_key=sticky_key,
             reallocate_sticky=False,

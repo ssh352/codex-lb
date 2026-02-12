@@ -57,7 +57,7 @@ async def test_openai_client_responses_create(app_instance, monkeypatch):
         result = await client.responses.create(
             model="gpt-5.1",
             input="hi",
-            prompt_cache_key="integration_openai_client_responses_create",
+            extra_body={"prompt_cache_key": "integration_openai_client_responses_create"},
         )
 
     assert result.id == "resp_1"
@@ -84,7 +84,7 @@ async def test_openai_client_chat_completions_create(app_instance, monkeypatch):
         result = await client.chat.completions.create(
             model="gpt-5.2",
             messages=[{"role": "user", "content": "hi"}],
-            prompt_cache_key="integration_openai_client_chat_completions_create",
+            extra_body={"prompt_cache_key": "integration_openai_client_chat_completions_create"},
         )
 
     assert result.id == "resp_2"

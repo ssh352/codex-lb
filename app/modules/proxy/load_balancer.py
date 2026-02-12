@@ -68,11 +68,6 @@ class LoadBalancer:
         *,
         reallocate_sticky: bool = False,
     ) -> AccountSelection:
-        if not sticky_key:
-            return AccountSelection(
-                account=None,
-                error_message="Missing prompt_cache_key. Stickiness is required on this server.",
-            )
         snapshot = await self._get_snapshot()
         selected_snapshot: Account | None = None
         error_message: str | None = None

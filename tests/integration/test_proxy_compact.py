@@ -95,6 +95,43 @@ async def test_proxy_compact_success(async_client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_proxy_compact_without_prompt_cache_key_still_routes(async_client, monkeypatch):
+    email = "compact-nosticky@example.com"
+    raw_account_id = "acc_compact_nosticky"
+    auth_json = _make_auth_json(raw_account_id, email)
+    files = {"auth_json": ("auth.json", json.dumps(auth_json), "application/json")}
+    response = await async_client.post("/api/accounts/import", files=files)
+    assert response.status_code == 200
+
+    expected_account_id = generate_unique_account_id(raw_account_id, email)
+
+    async def fake_compact(payload, headers, access_token, account_id):
+        assert access_token == "access-token"
+        assert account_id == raw_account_id
+        return OpenAIResponsePayload.model_validate({"output": []})
+
+    monkeypatch.setattr(proxy_module, "core_compact_responses", fake_compact)
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
+        await usage_repo.add_entry(
+            account_id=expected_account_id,
+            used_percent=25.0,
+            window="primary",
+            reset_at=1735689600,
+            recorded_at=utcnow(),
+            credits_has=True,
+            credits_unlimited=False,
+            credits_balance=12.5,
+        )
+
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": []}
+    response = await async_client.post("/backend-api/codex/responses/compact", json=payload)
+    assert response.status_code == 200
+    assert response.json()["output"] == []
+
+
+@pytest.mark.asyncio
 async def test_proxy_compact_usage_limit_marks_account(async_client, monkeypatch):
     email = "limit@example.com"
     raw_account_id = "acc_limit"
