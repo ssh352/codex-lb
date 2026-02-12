@@ -85,8 +85,20 @@ class Settings(BaseSettings):
     sticky_sessions_backend: Literal["db", "memory"] = "memory"
     sticky_sessions_memory_maxsize: int = Field(default=10_000, gt=0)
     sticky_sessions_memory_ttl_seconds: float = Field(default=24 * 60 * 60, gt=0)
-    # Proxy selection snapshot TTL. Larger values reduce DB reads per request but may react slower to
-    # usage changes. The snapshot is always invalidated on key error events (rate limit/quota/etc).
+    # Proxy selection snapshot TTL (seconds).
+    #
+    # What it caches: a point-in-time view of accounts + latest usage + runtime state used by the
+    # load balancer when selecting an upstream account.
+    #
+    # Tradeoff ("freshness"):
+    # - Higher TTL reduces DB reads under concurrency (often improves p50/p95), but selection can lag
+    #   behind DB-driven updates (usage refresh results, dashboard toggles) by up to ~TTL seconds.
+    # - Lower TTL makes routing react sooner to DB-driven changes, but can increase DB pressure and
+    #   tail latency under bursty concurrency.
+    #
+    # Note: the snapshot is also explicitly invalidated on key proxy error events
+    # (rate limit/quota/permanent failure), so even with a higher TTL it can react quickly to
+    # request-observed failures.
     proxy_snapshot_ttl_seconds: float = Field(default=1.0, gt=0)
     # Proxy account selection strategy:
     # - "usage": select lowest usage percent (default; existing behavior).
