@@ -11,7 +11,6 @@ from app.core.clients.http import close_http_client, init_http_client
 from app.core.handlers import add_exception_handlers
 from app.core.middleware import (
     add_api_unhandled_error_middleware,
-    add_dashboard_totp_middleware,
     add_request_decompression_middleware,
     add_request_id_middleware,
 )
@@ -20,7 +19,6 @@ from app.core.usage.refresh_scheduler import build_usage_refresh_scheduler
 from app.db.session import close_db, init_db
 from app.modules.accounts import api as accounts_api
 from app.modules.dashboard import api as dashboard_api
-from app.modules.dashboard_auth import api as dashboard_auth_api
 from app.modules.health import api as health_api
 from app.modules.oauth import api as oauth_api
 from app.modules.proxy import api as proxy_api
@@ -54,7 +52,6 @@ def create_app() -> FastAPI:
 
     add_request_decompression_middleware(app)
     add_request_id_middleware(app)
-    add_dashboard_totp_middleware(app)
     add_api_unhandled_error_middleware(app)
     add_exception_handlers(app)
 
@@ -66,7 +63,6 @@ def create_app() -> FastAPI:
     app.include_router(usage_api.router)
     app.include_router(request_logs_api.router)
     app.include_router(oauth_api.router)
-    app.include_router(dashboard_auth_api.router)
     app.include_router(settings_api.router)
     app.include_router(health_api.router)
 

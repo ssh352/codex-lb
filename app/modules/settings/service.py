@@ -8,14 +8,11 @@ from app.modules.settings.repository import SettingsRepository
 @dataclass(frozen=True, slots=True)
 class DashboardSettingsData:
     prefer_earlier_reset_accounts: bool
-    totp_required_on_login: bool
-    totp_configured: bool
 
 
 @dataclass(frozen=True, slots=True)
 class DashboardSettingsUpdateData:
     prefer_earlier_reset_accounts: bool
-    totp_required_on_login: bool
 
 
 class SettingsService:
@@ -26,20 +23,12 @@ class SettingsService:
         row = await self._repository.get_or_create()
         return DashboardSettingsData(
             prefer_earlier_reset_accounts=row.prefer_earlier_reset_accounts,
-            totp_required_on_login=row.totp_required_on_login,
-            totp_configured=row.totp_secret_encrypted is not None,
         )
 
     async def update_settings(self, payload: DashboardSettingsUpdateData) -> DashboardSettingsData:
-        current = await self._repository.get_or_create()
-        if payload.totp_required_on_login and current.totp_secret_encrypted is None:
-            raise ValueError("Configure TOTP before enabling login enforcement")
         row = await self._repository.update(
             prefer_earlier_reset_accounts=payload.prefer_earlier_reset_accounts,
-            totp_required_on_login=payload.totp_required_on_login,
         )
         return DashboardSettingsData(
             prefer_earlier_reset_accounts=row.prefer_earlier_reset_accounts,
-            totp_required_on_login=row.totp_required_on_login,
-            totp_configured=row.totp_secret_encrypted is not None,
         )

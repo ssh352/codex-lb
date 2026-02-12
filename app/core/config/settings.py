@@ -75,7 +75,6 @@ class Settings(BaseSettings):
     max_decompressed_body_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
     image_inline_fetch_enabled: bool = True
     image_inline_allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
-    dashboard_setup_token: str | None = None
     request_logs_buffer_enabled: bool = True
     request_logs_buffer_maxsize: int = Field(default=5000, gt=0)
     request_logs_flush_interval_seconds: float = Field(default=0.5, gt=0)
