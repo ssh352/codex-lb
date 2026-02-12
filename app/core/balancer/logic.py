@@ -17,7 +17,6 @@ PERMANENT_FAILURE_CODES = {
 }
 
 SECONDS_PER_DAY = 60 * 60 * 24
-UNKNOWN_RESET_BUCKET_DAYS = 10_000
 
 
 @dataclass
@@ -112,12 +111,11 @@ def select_account(
         return secondary_used, primary_used, last_selected, state.account_id
 
     def _reset_first_sort_key(state: AccountState) -> tuple[int, float, float, float, str]:
-        reset_bucket_days = UNKNOWN_RESET_BUCKET_DAYS
+        # When secondary reset is unknown (new account / no secondary usage history yet), treat it
+        # as highest priority so it can start accumulating usage history.
+        reset_bucket_days = 0
         if state.secondary_reset_at is not None:
-            reset_bucket_days = max(
-                0,
-                int((state.secondary_reset_at - current) // SECONDS_PER_DAY),
-            )
+            reset_bucket_days = max(0, int((state.secondary_reset_at - current) // SECONDS_PER_DAY))
         secondary_used, primary_used, last_selected, account_id = _usage_sort_key(state)
         return reset_bucket_days, secondary_used, primary_used, last_selected, account_id
 

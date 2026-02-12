@@ -96,7 +96,7 @@ def test_select_account_prefers_lower_secondary_used_with_same_reset_bucket():
     assert result.account.account_id == "b"
 
 
-def test_select_account_deprioritizes_missing_secondary_reset_at():
+def test_select_account_prioritizes_missing_secondary_reset_at():
     now = time.time()
     states = [
         AccountState(
@@ -111,7 +111,30 @@ def test_select_account_deprioritizes_missing_secondary_reset_at():
             AccountStatus.ACTIVE,
             used_percent=90.0,
             secondary_used_percent=90.0,
-            secondary_reset_at=int(now + 1 * 3600),
+            secondary_reset_at=int(now + 3 * 24 * 3600),
+        ),
+    ]
+    result = select_account(states, now=now, prefer_earlier_reset=True)
+    assert result.account is not None
+    assert result.account.account_id == "a"
+
+
+def test_select_account_orders_multiple_new_accounts_by_usage():
+    now = time.time()
+    states = [
+        AccountState(
+            "a",
+            AccountStatus.ACTIVE,
+            used_percent=10.0,
+            secondary_used_percent=10.0,
+            secondary_reset_at=None,
+        ),
+        AccountState(
+            "b",
+            AccountStatus.ACTIVE,
+            used_percent=5.0,
+            secondary_used_percent=5.0,
+            secondary_reset_at=None,
         ),
     ]
     result = select_account(states, now=now, prefer_earlier_reset=True)
