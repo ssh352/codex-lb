@@ -33,6 +33,7 @@ node_modules/
 
 # Local
 .local/
+.tmp/
 .worktrees/
 certs/
 
