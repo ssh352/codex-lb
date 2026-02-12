@@ -516,17 +516,6 @@
 
             <p class="text-muted" x-show="settings.isLoading" x-transition.opacity>Loading settings…</p>
 
-            <fieldset class="settings-fieldset" :disabled="settings.isLoading || settings.isSaving || !settings.hasLoaded">
-              <legend>Reset priority</legend>
-              <input id="reset-priority-toggle" type="checkbox" x-model="settings.preferEarlierResetAccounts"
-                aria-describedby="reset-priority-help">
-              <label for="reset-priority-toggle">Prefer accounts that reset earlier first</label>
-              <div id="reset-priority-help" class="text-muted" style="margin-top: 6px">
-                When enabled, the load balancer prefers accounts whose secondary quota resets sooner, then balances
-                usage.
-              </div>
-            </fieldset>
-
             <fieldset class="settings-fieldset">
               <legend>Dashboard refresh</legend>
               <input id="dashboard-auto-refresh-toggle" type="checkbox" x-model="autoRefresh.enabled"

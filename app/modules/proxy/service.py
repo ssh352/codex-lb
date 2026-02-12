@@ -85,40 +85,82 @@ class ProxyService:
         _maybe_log_proxy_request_shape("compact", payload, headers)
         filtered = filter_inbound_headers(headers)
         sticky_key = _sticky_key_from_compact_payload(payload)
-        selection = await self._load_balancer.select_account(
-            sticky_key=sticky_key,
-            reallocate_sticky=False,
-        )
-        account = selection.account
-        if not account:
+        if sticky_key is None:
             raise ProxyResponseError(
-                503,
-                openai_error("no_accounts", selection.error_message or "No active accounts available"),
+                400,
+                openai_error(
+                    "missing_prompt_cache_key",
+                    "Missing prompt_cache_key. Stickiness is required on this server.",
+                    error_type="invalid_request_error",
+                ),
             )
-        account = await self._ensure_fresh_if_needed(account)
-        account_id = _header_account_id(account.chatgpt_account_id)
+        retryable_codes = {
+            "rate_limit_exceeded",
+            "usage_limit_reached",
+            "insufficient_quota",
+            "usage_not_included",
+            "quota_exceeded",
+        }
+        max_attempts = 3
+        last_retryable_error: ProxyResponseError | None = None
 
-        async def _call_compact(target: Account) -> OpenAIResponsePayload:
-            access_token = self._encryptor.decrypt(target.access_token_encrypted)
-            return await core_compact_responses(payload, filtered, access_token, account_id)
+        for attempt in range(max_attempts):
+            selection = await self._load_balancer.select_account(
+                sticky_key=sticky_key,
+                reallocate_sticky=attempt > 0,
+            )
+            account = selection.account
+            if not account:
+                if last_retryable_error is not None:
+                    raise last_retryable_error
+                raise ProxyResponseError(
+                    503,
+                    openai_error("no_accounts", selection.error_message or "No active accounts available"),
+                )
 
-        try:
-            return await _call_compact(account)
-        except ProxyResponseError as exc:
-            if exc.status_code != 401:
-                await self._handle_proxy_error(account, exc)
-                raise
+            async def _call_compact(target: Account) -> OpenAIResponsePayload:
+                access_token = self._encryptor.decrypt(target.access_token_encrypted)
+                account_id = _header_account_id(target.chatgpt_account_id)
+                return await core_compact_responses(payload, filtered, access_token, account_id)
+
             try:
-                account = await self._ensure_fresh(account, force=True)
-            except RefreshError as refresh_exc:
-                if refresh_exc.is_permanent:
-                    await self._load_balancer.mark_permanent_failure(account, refresh_exc.code)
-                raise exc
-            try:
+                account = await self._ensure_fresh_if_needed(account)
                 return await _call_compact(account)
             except ProxyResponseError as exc:
-                await self._handle_proxy_error(account, exc)
+                if exc.status_code == 401:
+                    try:
+                        account = await self._ensure_fresh(account, force=True)
+                    except RefreshError as refresh_exc:
+                        if refresh_exc.is_permanent:
+                            await self._load_balancer.mark_permanent_failure(account, refresh_exc.code)
+                        raise exc
+                    try:
+                        return await _call_compact(account)
+                    except ProxyResponseError as exc:
+                        await self._handle_proxy_error(account, exc)
+                        raise
+
+                error = _parse_openai_error(exc.payload)
+                code = _normalize_error_code(
+                    error.code if error else None,
+                    error.type if error else None,
+                )
+                await self._handle_stream_error(account, _upstream_error_from_openai(error), code)
+                if code in retryable_codes and attempt < (max_attempts - 1):
+                    last_retryable_error = exc
+                    continue
                 raise
+            except RefreshError as exc:
+                if exc.is_permanent:
+                    await self._load_balancer.mark_permanent_failure(account, exc.code)
+                continue
+
+        if last_retryable_error is not None:
+            raise last_retryable_error
+        raise ProxyResponseError(
+            503,
+            openai_error("no_accounts", "No available accounts after retries"),
+        )
 
     async def rate_limit_headers(self) -> dict[str, str]:
         async def _build() -> dict[str, str]:

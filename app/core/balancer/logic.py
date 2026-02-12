@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Iterable, Literal
+from typing import Iterable
 
 from app.core.balancer.types import UpstreamError
 from app.core.utils.retry import backoff_seconds, parse_retry_after
 from app.db.models import AccountStatus
-
-type SelectionStrategy = Literal["usage", "reset_bucket", "waste_pressure"]
 
 PERMANENT_FAILURE_CODES = {
     "refresh_token_expired": "Refresh token expired - re-login required",
@@ -17,9 +15,6 @@ PERMANENT_FAILURE_CODES = {
     "account_suspended": "Account has been suspended",
     "account_deleted": "Account has been deleted",
 }
-
-SECONDS_PER_DAY = 60 * 60 * 24
-
 
 @dataclass
 class AccountState:
@@ -46,9 +41,6 @@ class SelectionResult:
 def select_account(
     states: Iterable[AccountState],
     now: float | None = None,
-    *,
-    prefer_earlier_reset: bool = False,
-    strategy: SelectionStrategy | None = None,
 ) -> SelectionResult:
     current = now or time.time()
     available: list[AccountState] = []
@@ -114,30 +106,20 @@ def select_account(
         last_selected = state.last_selected_at or 0.0
         return secondary_used, primary_used, last_selected, state.account_id
 
-    def _reset_first_sort_key(state: AccountState) -> tuple[int, float, float, float, str]:
-        # When secondary reset is unknown (new account / no secondary usage history yet), treat it
-        # as highest priority so it can start accumulating usage history.
-        reset_bucket_days = 0
-        if state.secondary_reset_at is not None:
-            reset_bucket_days = max(0, int((state.secondary_reset_at - current) // SECONDS_PER_DAY))
-        secondary_used, primary_used, last_selected, account_id = _usage_sort_key(state)
-        return reset_bucket_days, secondary_used, primary_used, last_selected, account_id
-
     def _waste_pressure_sort_key(state: AccountState) -> tuple[float, float, float, float, str]:
+        primary_used = float(state.used_percent or 0.0)
         secondary_capacity = float(state.secondary_capacity_credits or 0.0)
-        secondary_used = float(state.secondary_used_percent or 0.0)
+        secondary_used = (
+            float(state.secondary_used_percent) if state.secondary_used_percent is not None else float(primary_used)
+        )
         secondary_remaining = secondary_capacity * max(0.0, 100.0 - secondary_used) / 100.0
 
-        if state.secondary_reset_at is not None:
-            time_to_reset = max(60.0, float(state.secondary_reset_at) - current)
+        if state.secondary_reset_at is None:
+            pressure = 0.0
         else:
-            # When secondary reset is unknown (new account / no secondary usage history yet), assume
-            # a full secondary window so the account is eligible but not artificially "urgent".
-            time_to_reset = 7.0 * 24.0 * 60.0 * 60.0
+            time_to_reset = max(60.0, float(state.secondary_reset_at) - current)
+            pressure = (secondary_remaining / time_to_reset) if secondary_remaining > 0.0 else 0.0
 
-        pressure = (secondary_remaining / time_to_reset) if secondary_remaining > 0.0 else 0.0
-
-        primary_used = float(state.used_percent or 0.0)
         primary_headroom = max(0.0, 100.0 - primary_used) / 100.0
         success_factor = primary_headroom**2
         health_factor = 1.0 / (1.0 + float(max(0, state.error_count)))
@@ -147,16 +129,7 @@ def select_account(
         # Use negative score so min() selects the maximum score.
         return -score, secondary_used_fallback, primary_used_fallback, last_selected, account_id
 
-    effective_strategy = strategy
-    if effective_strategy is None:
-        effective_strategy = "reset_bucket" if prefer_earlier_reset else "usage"
-
-    if effective_strategy == "waste_pressure":
-        selected = min(available, key=_waste_pressure_sort_key)
-    elif effective_strategy == "reset_bucket":
-        selected = min(available, key=_reset_first_sort_key)
-    else:
-        selected = min(available, key=_usage_sort_key)
+    selected = min(available, key=_waste_pressure_sort_key)
     return SelectionResult(selected, None)
 
 

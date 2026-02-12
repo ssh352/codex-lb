@@ -15,7 +15,6 @@ from app.core.balancer import (
     handle_rate_limit,
     select_account,
 )
-from app.core.balancer.logic import SelectionStrategy
 from app.core.balancer.types import UpstreamError
 from app.core.config.settings import get_settings
 from app.core.usage.quota import apply_usage_quota
@@ -45,8 +44,6 @@ class _Snapshot:
     accounts: list[Account]
     latest_primary: dict[str, _UsageSnapshot]
     latest_secondary: dict[str, _UsageSnapshot]
-    prefer_earlier_reset_accounts: bool
-    selection_strategy: SelectionStrategy
     states: list[AccountState]
     account_map: dict[str, Account]
     updated_at: float
@@ -81,7 +78,6 @@ class LoadBalancer:
                     account_map=snapshot.account_map,
                     sticky_key=sticky_key,
                     reallocate_sticky=reallocate_sticky,
-                    strategy=snapshot.selection_strategy,
                     sticky_repo=repos.sticky_sessions,
                 )
         elif sticky_key and sticky_backend == "memory":
@@ -90,13 +86,9 @@ class LoadBalancer:
                 account_map=snapshot.account_map,
                 sticky_key=sticky_key,
                 reallocate_sticky=reallocate_sticky,
-                strategy=snapshot.selection_strategy,
             )
         else:
-            result = select_account(
-                snapshot.states,
-                strategy=snapshot.selection_strategy,
-            )
+            result = select_account(snapshot.states)
 
         if result.account is None:
             error_message = result.error_message
@@ -129,14 +121,6 @@ class LoadBalancer:
                 return snapshot
 
             async with self._repo_factory() as repos:
-                dashboard_settings = await repos.settings.get_or_create()
-                prefer_earlier_reset_accounts = bool(dashboard_settings.prefer_earlier_reset_accounts)
-                configured_strategy = get_settings().proxy_selection_strategy
-                if configured_strategy == "usage":
-                    selection_strategy = "reset_bucket" if prefer_earlier_reset_accounts else "usage"
-                else:
-                    selection_strategy = configured_strategy
-
                 accounts_orm = await repos.accounts.list_accounts()
                 latest_primary_orm, latest_secondary_orm = await repos.usage.latest_primary_secondary_by_account()
 
@@ -157,8 +141,6 @@ class LoadBalancer:
                 accounts=accounts,
                 latest_primary=latest_primary,
                 latest_secondary=latest_secondary,
-                prefer_earlier_reset_accounts=prefer_earlier_reset_accounts,
-                selection_strategy=selection_strategy,
                 states=states,
                 account_map=account_map,
                 updated_at=now,
@@ -173,14 +155,13 @@ class LoadBalancer:
         account_map: dict[str, Account],
         sticky_key: str | None,
         reallocate_sticky: bool,
-        strategy: SelectionStrategy,
         sticky_repo: StickySessionsRepository | None,
     ) -> SelectionResult:
         if not sticky_key or not sticky_repo:
-            return select_account(states, strategy=strategy)
+            return select_account(states)
 
         if reallocate_sticky:
-            chosen = select_account(states, strategy=strategy)
+            chosen = select_account(states)
             if chosen.account is not None and chosen.account.account_id in account_map:
                 await sticky_repo.upsert(sticky_key, chosen.account.account_id)
             return chosen
@@ -191,11 +172,11 @@ class LoadBalancer:
             if pinned is None:
                 await sticky_repo.delete(sticky_key)
             else:
-                pinned_result = select_account([pinned], strategy=strategy)
+                pinned_result = select_account([pinned])
                 if pinned_result.account is not None:
                     return pinned_result
 
-        chosen = select_account(states, strategy=strategy)
+        chosen = select_account(states)
         if chosen.account is not None and chosen.account.account_id in account_map:
             await sticky_repo.upsert(sticky_key, chosen.account.account_id)
         return chosen
@@ -207,10 +188,9 @@ class LoadBalancer:
         account_map: dict[str, Account],
         sticky_key: str,
         reallocate_sticky: bool,
-        strategy: SelectionStrategy,
     ) -> SelectionResult:
         if reallocate_sticky:
-            chosen = select_account(states, strategy=strategy)
+            chosen = select_account(states)
             if chosen.account is not None and chosen.account.account_id in account_map:
                 await self._sticky_set(sticky_key, chosen.account.account_id)
             return chosen
@@ -221,11 +201,11 @@ class LoadBalancer:
             if pinned is None:
                 await self._sticky_delete(sticky_key)
             else:
-                pinned_result = select_account([pinned], strategy=strategy)
+                pinned_result = select_account([pinned])
                 if pinned_result.account is not None:
                     return pinned_result
 
-        chosen = select_account(states, strategy=strategy)
+        chosen = select_account(states)
         if chosen.account is not None and chosen.account.account_id in account_map:
             await self._sticky_set(sticky_key, chosen.account.account_id)
         return chosen

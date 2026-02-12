@@ -8,6 +8,8 @@ import pytest
 import app.modules.proxy.service as proxy_module
 from app.core.auth import generate_unique_account_id
 from app.core.clients.proxy import ProxyResponseError
+from app.core.config.settings import get_settings
+from app.core.crypto import TokenEncryptor
 from app.core.openai.models import OpenAIResponsePayload
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
@@ -167,3 +169,84 @@ async def test_proxy_compact_usage_limit_marks_account(async_client, monkeypatch
         account = await session.get(Account, expected_account_id)
         assert account is not None
         assert account.status == AccountStatus.RATE_LIMITED
+
+
+@pytest.mark.asyncio
+async def test_proxy_compact_usage_limit_reroutes_to_other_account(async_client, monkeypatch, db_setup):
+    monkeypatch.setenv("CODEX_LB_STICKY_SESSIONS_BACKEND", "db")
+    get_settings.cache_clear()
+
+    now = utcnow()
+    encryptor = TokenEncryptor()
+    account_a = Account(
+        id="acc_compact_a",
+        chatgpt_account_id="acc_a",
+        email="compact-a@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access-a"),
+        refresh_token_encrypted=encryptor.encrypt("refresh-a"),
+        id_token_encrypted=encryptor.encrypt("id-a"),
+        last_refresh=now,
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+    account_b = Account(
+        id="acc_compact_b",
+        chatgpt_account_id="acc_b",
+        email="compact-b@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access-b"),
+        refresh_token_encrypted=encryptor.encrypt("refresh-b"),
+        id_token_encrypted=encryptor.encrypt("id-b"),
+        last_refresh=now,
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+
+    async with AccountsSessionLocal() as session:
+        session.add(account_a)
+        session.add(account_b)
+        await session.commit()
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
+        await usage_repo.add_entry(
+            account_id=account_a.id,
+            used_percent=0.0,
+            window="primary",
+            reset_at=1735689600,
+            recorded_at=now,
+        )
+        await usage_repo.add_entry(
+            account_id=account_b.id,
+            used_percent=50.0,
+            window="primary",
+            reset_at=1735689600,
+            recorded_at=now,
+        )
+
+    seen: list[str] = []
+
+    async def fake_compact(payload, headers, access_token, account_id):
+        seen.append(str(account_id))
+        if account_id == "acc_a":
+            raise ProxyResponseError(
+                429,
+                {
+                    "error": {
+                        "type": "usage_limit_reached",
+                        "message": "try again in 60s",
+                        "plan_type": "plus",
+                        "resets_in_seconds": 60,
+                    }
+                },
+            )
+        return OpenAIResponsePayload.model_validate({"output": []})
+
+    monkeypatch.setattr(proxy_module, "core_compact_responses", fake_compact)
+
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "prompt_cache_key": "compact_reroute_1"}
+    response = await async_client.post("/backend-api/codex/responses/compact", json=payload)
+    assert response.status_code == 200
+    assert response.json()["output"] == []
+    assert seen == ["acc_a", "acc_b"]
