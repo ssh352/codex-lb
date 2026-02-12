@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     # Note: the snapshot is also explicitly invalidated on key proxy error events
     # (rate limit/quota/permanent failure), so even with a higher TTL it can react quickly to
     # request-observed failures.
-    proxy_snapshot_ttl_seconds: float = Field(default=1.0, gt=0)
+    proxy_snapshot_ttl_seconds: float = Field(default=10.0, gt=0)
     # Proxy account selection strategy:
     # - "usage": select lowest usage percent (default; existing behavior).
     # - "reset_bucket": select earlier secondary reset bucket first.
