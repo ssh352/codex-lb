@@ -1471,12 +1471,11 @@
 		);
 	};
 
-	const normalizeSettingsPayload = (payload) => ({
-		stickyThreadsEnabled: Boolean(payload?.stickyThreadsEnabled),
-		preferEarlierResetAccounts: Boolean(payload?.preferEarlierResetAccounts),
-		totpRequiredOnLogin: Boolean(payload?.totpRequiredOnLogin),
-		totpConfigured: Boolean(payload?.totpConfigured),
-	});
+		const normalizeSettingsPayload = (payload) => ({
+			preferEarlierResetAccounts: Boolean(payload?.preferEarlierResetAccounts),
+			totpRequiredOnLogin: Boolean(payload?.totpRequiredOnLogin),
+			totpConfigured: Boolean(payload?.totpConfigured),
+		});
 
 	const fetchSettings = async () => {
 		const payload = await fetchJson(API_ENDPOINTS.settings, "settings");
@@ -1511,12 +1510,11 @@
 				hasLoaded: false,
 			},
 
-					settings: {
-						stickyThreadsEnabled: false,
-						preferEarlierResetAccounts: false,
-						totpRequiredOnLogin: false,
-						totpConfigured: false,
-						setupToken: "",
+						settings: {
+							preferEarlierResetAccounts: false,
+							totpRequiredOnLogin: false,
+							totpConfigured: false,
+							setupToken: "",
 						totpSetup: {
 							open: false,
 							secret: "",
@@ -1762,13 +1760,12 @@
 				}
 				this.settings.isLoading = true;
 				this.settingsLoadPromise = (async () => {
-					try {
-						const settings = await fetchSettings();
-						this.settings.stickyThreadsEnabled = settings.stickyThreadsEnabled;
-						this.settings.preferEarlierResetAccounts =
-							settings.preferEarlierResetAccounts;
-						this.settings.totpRequiredOnLogin = settings.totpRequiredOnLogin;
-						this.settings.totpConfigured = settings.totpConfigured;
+						try {
+							const settings = await fetchSettings();
+							this.settings.preferEarlierResetAccounts =
+								settings.preferEarlierResetAccounts;
+							this.settings.totpRequiredOnLogin = settings.totpRequiredOnLogin;
+							this.settings.totpConfigured = settings.totpConfigured;
 						this.settings.hasLoaded = true;
 					} catch (err) {
 						console.error("Failed to load settings:", err);
@@ -2210,14 +2207,11 @@
 						requestLogs: data.requestLogs,
 						lastSyncAt: data.lastSyncAt,
 					});
-					if (data.settings) {
-						this.settings.stickyThreadsEnabled = Boolean(
-							data.settings.stickyThreadsEnabled,
-						);
-						this.settings.preferEarlierResetAccounts = Boolean(
-							data.settings.preferEarlierResetAccounts,
-						);
-						this.settings.totpRequiredOnLogin = Boolean(
+						if (data.settings) {
+							this.settings.preferEarlierResetAccounts = Boolean(
+								data.settings.preferEarlierResetAccounts,
+							);
+							this.settings.totpRequiredOnLogin = Boolean(
 							data.settings.totpRequiredOnLogin,
 						);
 						this.settings.totpConfigured = Boolean(data.settings.totpConfigured);
@@ -2237,23 +2231,21 @@
 					}
 				}
 				this.settings.isSaving = true;
-				try {
-					const payload = {
-						stickyThreadsEnabled: this.settings.stickyThreadsEnabled,
-						preferEarlierResetAccounts: this.settings.preferEarlierResetAccounts,
-						totpRequiredOnLogin: this.settings.totpRequiredOnLogin,
-					};
-					const updated = await putJson(
+					try {
+						const payload = {
+							preferEarlierResetAccounts: this.settings.preferEarlierResetAccounts,
+							totpRequiredOnLogin: this.settings.totpRequiredOnLogin,
+						};
+						const updated = await putJson(
 						API_ENDPOINTS.settings,
 						payload,
 						"save settings",
 					);
-					const normalized = normalizeSettingsPayload(updated);
-					this.settings.stickyThreadsEnabled = normalized.stickyThreadsEnabled;
-					this.settings.preferEarlierResetAccounts =
-						normalized.preferEarlierResetAccounts;
-					this.settings.totpRequiredOnLogin = normalized.totpRequiredOnLogin;
-					this.settings.totpConfigured = normalized.totpConfigured;
+						const normalized = normalizeSettingsPayload(updated);
+						this.settings.preferEarlierResetAccounts =
+							normalized.preferEarlierResetAccounts;
+						this.settings.totpRequiredOnLogin = normalized.totpRequiredOnLogin;
+						this.settings.totpConfigured = normalized.totpConfigured;
 					if (this.settings.totpRequiredOnLogin) {
 						await this.ensureDashboardAccess();
 					}

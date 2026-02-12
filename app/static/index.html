@@ -512,22 +512,9 @@
         <article role="tabpanel" id="tab-settings" :hidden="view !== 'settings'">
           <div class="panel">
             <h3>Routing settings</h3>
-            <p class="text-muted">Toggle routing features. When both options are off, accounts are selected by
-              balancing usage evenly.</p>
+            <p class="text-muted">Configure routing features.</p>
 
             <p class="text-muted" x-show="settings.isLoading" x-transition.opacity>Loading settings…</p>
-
-            <fieldset class="settings-fieldset" :disabled="settings.isLoading || settings.isSaving || !settings.hasLoaded">
-              <legend>Sticky threads</legend>
-              <input id="sticky-threads-toggle" type="checkbox" x-model="settings.stickyThreadsEnabled"
-                aria-describedby="sticky-threads-help">
-              <label for="sticky-threads-toggle">Enable sticky threads (reuse the same upstream account per
-                conversation)</label>
-              <div id="sticky-threads-help" class="text-muted" style="margin-top: 6px">
-                When enabled, requests with a prompt cache key stay pinned to the same upstream account unless the
-                pinned account becomes unavailable.
-              </div>
-            </fieldset>
 
             <fieldset class="settings-fieldset" :disabled="settings.isLoading || settings.isSaving || !settings.hasLoaded">
               <legend>Reset priority</legend>

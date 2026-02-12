@@ -57,6 +57,7 @@ async def test_v1_responses_forwards_input_file_url(async_client, monkeypatch):
 
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_file_url_1",
         "input": [
             {
                 "role": "user",
@@ -76,6 +77,7 @@ async def test_v1_responses_forwards_input_file_url(async_client, monkeypatch):
 async def test_v1_responses_rejects_input_file_id(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_file_id_1",
         "input": [
             {
                 "role": "user",
@@ -98,6 +100,7 @@ async def test_v1_responses_rejects_input_file_id(async_client):
 async def test_v1_responses_rejects_previous_response_id(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_previous_response_id_1",
         "previous_response_id": "resp_abc123",
         "input": [
             {
@@ -129,6 +132,7 @@ async def test_v1_responses_rejects_previous_response_id(async_client):
 async def test_v1_responses_rejects_builtin_tools(async_client, tool_payload):
     request_payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_builtin_tools_1",
         "input": [
             {
                 "role": "user",
@@ -155,7 +159,7 @@ async def test_v1_responses_forwards_input_string(async_client, monkeypatch):
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.2", "input": "Hello"}
+    payload = {"model": "gpt-5.2", "input": "Hello", "prompt_cache_key": "compat_input_string_1"}
     resp = await async_client.post("/v1/responses", json=payload)
     assert resp.status_code == 200
     assert seen["payload"].input == [
@@ -177,6 +181,7 @@ async def test_v1_responses_forwards_include_logprobs(async_client, monkeypatch)
 
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_include_logprobs_1",
         "input": [{"role": "user", "content": [{"type": "input_text", "text": "hi"}]}],
         "include": ["message.output_text.logprobs"],
     }
@@ -187,14 +192,14 @@ async def test_v1_responses_forwards_include_logprobs(async_client, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_v1_responses_rejects_invalid_include(async_client):
-    payload = {"model": "gpt-5.2", "input": "hi", "include": ["not_allowed"]}
+    payload = {"model": "gpt-5.2", "input": "hi", "include": ["not_allowed"], "prompt_cache_key": "compat_bad_include_1"}
     resp = await async_client.post("/v1/responses", json=payload)
     assert resp.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_v1_responses_rejects_store_true(async_client):
-    payload = {"model": "gpt-5.2", "input": "hi", "store": True}
+    payload = {"model": "gpt-5.2", "input": "hi", "store": True, "prompt_cache_key": "compat_store_true_1"}
     resp = await async_client.post("/v1/responses", json=payload)
     assert resp.status_code == 400
 
@@ -202,7 +207,12 @@ async def test_v1_responses_rejects_store_true(async_client):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("truncation", ["auto", "disabled"])
 async def test_v1_responses_rejects_truncation(async_client, truncation):
-    payload = {"model": "gpt-5.2", "input": "hi", "truncation": truncation}
+    payload = {
+        "model": "gpt-5.2",
+        "input": "hi",
+        "truncation": truncation,
+        "prompt_cache_key": "compat_truncation_1",
+    }
     resp = await async_client.post("/v1/responses", json=payload)
     assert resp.status_code == 400
 
@@ -211,6 +221,7 @@ async def test_v1_responses_rejects_truncation(async_client, truncation):
 async def test_v1_responses_rejects_conversation_and_previous(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_conversation_previous_1",
         "input": "hi",
         "conversation": "conv_1",
         "previous_response_id": "resp_1",
@@ -234,6 +245,7 @@ async def test_v1_responses_allows_web_search(async_client, monkeypatch, tool_ty
 
     request_payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_v1_web_search_1",
         "input": [{"role": "user", "content": [{"type": "input_text", "text": "Search"}]}],
         "tools": [{"type": tool_type}],
     }
@@ -257,6 +269,7 @@ async def test_backend_responses_allows_web_search(async_client, monkeypatch, to
 
     request_payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_backend_web_search_1",
         "instructions": "",
         "input": [{"role": "user", "content": [{"type": "input_text", "text": "Search"}]}],
         "tools": [{"type": tool_type}],
@@ -270,6 +283,7 @@ async def test_backend_responses_allows_web_search(async_client, monkeypatch, to
 async def test_v1_chat_completions_rejects_non_text_developer(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_bad_developer_1",
         "messages": [
             {
                 "role": "developer",
@@ -286,6 +300,7 @@ async def test_v1_chat_completions_rejects_non_text_developer(async_client):
 async def test_v1_chat_completions_rejects_invalid_audio(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_bad_audio_1",
         "messages": [
             {
                 "role": "user",
@@ -313,6 +328,7 @@ async def test_v1_chat_completions_maps_response_format(async_client, monkeypatc
 
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_response_format_1",
         "messages": [{"role": "user", "content": "Return JSON."}],
         "response_format": {
             "type": "json_schema",
@@ -336,6 +352,7 @@ async def test_v1_chat_completions_maps_response_format(async_client, monkeypatc
 async def test_v1_chat_completions_rejects_missing_json_schema(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_missing_schema_1",
         "messages": [{"role": "user", "content": "Return JSON."}],
         "response_format": {"type": "json_schema"},
     }
@@ -357,6 +374,7 @@ async def test_v1_chat_completions_forwards_multimodal(async_client, monkeypatch
 
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_multimodal_1",
         "messages": [
             {
                 "role": "user",
@@ -382,6 +400,7 @@ async def test_v1_chat_completions_forwards_multimodal(async_client, monkeypatch
 async def test_v1_chat_completions_rejects_file_id(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_file_id_1",
         "messages": [
             {
                 "role": "user",
@@ -404,6 +423,7 @@ async def test_v1_chat_completions_rejects_file_id(async_client):
 async def test_v1_chat_completions_rejects_audio_input(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_audio_input_1",
         "messages": [
             {
                 "role": "user",
@@ -422,6 +442,7 @@ async def test_v1_chat_completions_rejects_audio_input(async_client):
 async def test_v1_chat_completions_rejects_builtin_tools(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_builtin_tools_1",
         "messages": [{"role": "user", "content": "Search the web."}],
         "tools": [{"type": "image_generation"}],
     }
@@ -444,6 +465,7 @@ async def test_v1_chat_completions_allows_web_search(async_client, monkeypatch, 
 
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_web_search_1",
         "messages": [{"role": "user", "content": "Search the web."}],
         "tools": [{"type": tool_type}],
     }
@@ -466,6 +488,7 @@ async def test_v1_chat_completions_normalizes_tools_and_tool_choice(async_client
 
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_tools_choice_1",
         "messages": [{"role": "user", "content": "Weather?"}],
         "tools": [
             {
@@ -506,6 +529,7 @@ async def test_v1_chat_completions_maps_reasoning_effort(async_client, monkeypat
 
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "compat_chat_reasoning_effort_1",
         "messages": [{"role": "user", "content": "Think."}],
         "reasoning_effort": "low",
     }

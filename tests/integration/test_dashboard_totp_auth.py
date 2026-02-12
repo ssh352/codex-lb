@@ -16,7 +16,6 @@ async def test_cannot_enable_totp_requirement_without_configured_secret(async_cl
     response = await async_client.put(
         "/api/settings",
         json={
-            "stickyThreadsEnabled": False,
             "preferEarlierResetAccounts": False,
             "totpRequiredOnLogin": True,
         },
@@ -112,7 +111,6 @@ async def test_dashboard_totp_flow_enforces_auth_per_login(async_client, monkeyp
     enable = await async_client.put(
         "/api/settings",
         json={
-            "stickyThreadsEnabled": False,
             "preferEarlierResetAccounts": False,
             "totpRequiredOnLogin": True,
         },
@@ -215,7 +213,6 @@ async def test_verify_rejects_one_of_concurrent_replays(async_client, monkeypatc
     enable = await async_client.put(
         "/api/settings",
         json={
-            "stickyThreadsEnabled": False,
             "preferEarlierResetAccounts": False,
             "totpRequiredOnLogin": True,
         },

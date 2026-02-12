@@ -100,7 +100,7 @@ async def test_load_balancer_skips_secondary_quota(db_setup):
         )
 
         balancer = LoadBalancer(_repo_factory)
-        selection = await balancer.select_account()
+        selection = await balancer.select_account(sticky_key="integration_1")
 
         assert selection.account is not None
         assert selection.account.id == account_b.id
@@ -152,7 +152,7 @@ async def test_load_balancer_reactivates_after_secondary_reset(db_setup):
         )
 
         balancer = LoadBalancer(_repo_factory)
-        selection = await balancer.select_account()
+        selection = await balancer.select_account(sticky_key="integration_2")
 
         assert selection.account is not None
         assert selection.account.id == account.id

@@ -49,25 +49,8 @@ async def _import_account(async_client, account_id: str, email: str) -> str:
     return payload["accountId"]
 
 
-async def _set_routing_settings(
-    async_client,
-    *,
-    sticky_threads_enabled: bool,
-    prefer_earlier_reset_accounts: bool = False,
-) -> None:
-    response = await async_client.put(
-        "/api/settings",
-        json={
-            "stickyThreadsEnabled": sticky_threads_enabled,
-            "preferEarlierResetAccounts": prefer_earlier_reset_accounts,
-        },
-    )
-    assert response.status_code == 200
-
-
 @pytest.mark.asyncio
 async def test_proxy_sticky_prompt_cache_key_pins_account(async_client, monkeypatch):
-    await _set_routing_settings(async_client, sticky_threads_enabled=True)
     acc_a_id = await _import_account(async_client, "acc_a", "a@example.com")
     acc_b_id = await _import_account(async_client, "acc_b", "b@example.com")
 
@@ -135,7 +118,6 @@ async def test_proxy_sticky_prompt_cache_key_pins_account(async_client, monkeypa
 
 @pytest.mark.asyncio
 async def test_proxy_sticky_switches_when_pinned_rate_limited(async_client, monkeypatch):
-    await _set_routing_settings(async_client, sticky_threads_enabled=True)
     encryptor = TokenEncryptor()
     now = utcnow()
     now_epoch = int(now.replace(tzinfo=timezone.utc).timestamp())
@@ -214,8 +196,7 @@ async def test_proxy_sticky_switches_when_pinned_rate_limited(async_client, monk
 
 
 @pytest.mark.asyncio
-async def test_proxy_compact_reallocates_sticky_mapping(async_client, monkeypatch):
-    await _set_routing_settings(async_client, sticky_threads_enabled=True)
+async def test_proxy_compact_respects_sticky_mapping(async_client, monkeypatch):
     acc_c1_id = await _import_account(async_client, "acc_c1", "c1@example.com")
     acc_c2_id = await _import_account(async_client, "acc_c2", "c2@example.com")
 
@@ -291,8 +272,8 @@ async def test_proxy_compact_reallocates_sticky_mapping(async_client, monkeypatc
     }
     response = await async_client.post("/backend-api/codex/responses/compact", json=compact_payload)
     assert response.status_code == 200
-    assert compact_seen == ["acc_c2"]
+    assert compact_seen == ["acc_c1"]
 
     response = await async_client.post("/backend-api/codex/responses", json=stream_payload)
     assert response.status_code == 200
-    assert stream_seen == ["acc_c1", "acc_c2"]
+    assert stream_seen == ["acc_c1", "acc_c1"]

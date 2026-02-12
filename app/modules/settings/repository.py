@@ -18,7 +18,7 @@ class SettingsRepository:
 
         row = DashboardSettings(
             id=_SETTINGS_ID,
-            sticky_threads_enabled=False,
+            sticky_threads_enabled=True,
             prefer_earlier_reset_accounts=False,
             totp_required_on_login=False,
             totp_secret_encrypted=None,
@@ -32,13 +32,10 @@ class SettingsRepository:
     async def update(
         self,
         *,
-        sticky_threads_enabled: bool | None = None,
         prefer_earlier_reset_accounts: bool | None = None,
         totp_required_on_login: bool | None = None,
     ) -> DashboardSettings:
         settings = await self.get_or_create()
-        if sticky_threads_enabled is not None:
-            settings.sticky_threads_enabled = sticky_threads_enabled
         if prefer_earlier_reset_accounts is not None:
             settings.prefer_earlier_reset_accounts = prefer_earlier_reset_accounts
         if totp_required_on_login is not None:

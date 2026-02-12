@@ -54,7 +54,11 @@ async def test_openai_client_responses_create(app_instance, monkeypatch):
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver/v1") as http_client:
         client = openai.AsyncOpenAI(api_key="test", base_url="http://testserver/v1", http_client=http_client)
-        result = await client.responses.create(model="gpt-5.1", input="hi")
+        result = await client.responses.create(
+            model="gpt-5.1",
+            input="hi",
+            prompt_cache_key="integration_openai_client_responses_create",
+        )
 
     assert result.id == "resp_1"
     assert result.object == "response"
@@ -80,6 +84,7 @@ async def test_openai_client_chat_completions_create(app_instance, monkeypatch):
         result = await client.chat.completions.create(
             model="gpt-5.2",
             messages=[{"role": "user", "content": "hi"}],
+            prompt_cache_key="integration_openai_client_chat_completions_create",
         )
 
     assert result.id == "resp_2"

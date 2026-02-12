@@ -44,7 +44,6 @@ class _Snapshot:
     latest_primary: dict[str, _UsageSnapshot]
     latest_secondary: dict[str, _UsageSnapshot]
     prefer_earlier_reset_accounts: bool
-    sticky_threads_enabled: bool
     states: list[AccountState]
     account_map: dict[str, Account]
     updated_at: float
@@ -66,12 +65,14 @@ class LoadBalancer:
         *,
         reallocate_sticky: bool = False,
     ) -> AccountSelection:
+        if not sticky_key:
+            return AccountSelection(
+                account=None,
+                error_message="Missing prompt_cache_key. Stickiness is required on this server.",
+            )
         snapshot = await self._get_snapshot()
         selected_snapshot: Account | None = None
         error_message: str | None = None
-        if not snapshot.sticky_threads_enabled:
-            sticky_key = None
-            reallocate_sticky = False
 
         settings = get_settings()
         sticky_backend = settings.sticky_sessions_backend
@@ -117,10 +118,6 @@ class LoadBalancer:
         runtime.last_selected_at = time.time()
         return AccountSelection(account=selected_snapshot, error_message=None)
 
-    async def get_snapshot_settings(self) -> tuple[bool, bool]:
-        snapshot = await self._get_snapshot()
-        return snapshot.prefer_earlier_reset_accounts, snapshot.sticky_threads_enabled
-
     async def _get_snapshot(self) -> _Snapshot:
         now = time.time()
         snapshot = self._snapshot
@@ -136,7 +133,6 @@ class LoadBalancer:
             async with self._repo_factory() as repos:
                 settings = await repos.settings.get_or_create()
                 prefer_earlier_reset_accounts = bool(settings.prefer_earlier_reset_accounts)
-                sticky_threads_enabled = bool(settings.sticky_threads_enabled)
 
                 accounts_orm = await repos.accounts.list_accounts()
                 latest_primary_orm, latest_secondary_orm = await repos.usage.latest_primary_secondary_by_account()
@@ -159,7 +155,6 @@ class LoadBalancer:
                 latest_primary=latest_primary,
                 latest_secondary=latest_secondary,
                 prefer_earlier_reset_accounts=prefer_earlier_reset_accounts,
-                sticky_threads_enabled=sticky_threads_enabled,
                 states=states,
                 account_map=account_map,
                 updated_at=now,

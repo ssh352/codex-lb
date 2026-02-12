@@ -41,7 +41,7 @@ def _make_auth_json(account_id: str, email: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_proxy_compact_no_accounts(async_client):
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": []}
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "prompt_cache_key": "compact_no_accounts_1"}
     response = await async_client.post("/backend-api/codex/responses/compact", json=payload)
     assert response.status_code == 503
     error = response.json()["error"]
@@ -80,7 +80,7 @@ async def test_proxy_compact_success(async_client, monkeypatch):
             credits_balance=12.5,
         )
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": []}
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "prompt_cache_key": "compact_success_1"}
     response = await async_client.post("/backend-api/codex/responses/compact", json=payload)
     assert response.status_code == 200
     assert response.json()["output"] == []
@@ -120,7 +120,7 @@ async def test_proxy_compact_usage_limit_marks_account(async_client, monkeypatch
 
     monkeypatch.setattr(proxy_module, "core_compact_responses", fake_compact)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": []}
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "prompt_cache_key": "compact_limit_1"}
     response = await async_client.post("/backend-api/codex/responses/compact", json=payload)
     assert response.status_code == 429
     error = response.json()["error"]

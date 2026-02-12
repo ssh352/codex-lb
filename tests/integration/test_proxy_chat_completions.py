@@ -47,7 +47,12 @@ async def test_v1_chat_completions_stream(async_client, monkeypatch):
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.2", "messages": [{"role": "user", "content": "hi"}], "stream": True}
+    payload = {
+        "model": "gpt-5.2",
+        "messages": [{"role": "user", "content": "hi"}],
+        "stream": True,
+        "prompt_cache_key": "chat_stream_1",
+    }
     async with async_client.stream("POST", "/v1/chat/completions", json=payload) as resp:
         assert resp.status_code == 200
         lines = [line async for line in resp.aiter_lines() if line]
@@ -73,7 +78,11 @@ async def test_v1_chat_completions_non_stream_forces_stream(async_client, monkey
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.2", "messages": [{"role": "user", "content": "hi"}]}
+    payload = {
+        "model": "gpt-5.2",
+        "messages": [{"role": "user", "content": "hi"}],
+        "prompt_cache_key": "chat_non_stream_1",
+    }
     resp = await async_client.post("/v1/chat/completions", json=payload)
     assert resp.status_code == 200
     body = resp.json()
@@ -105,6 +114,7 @@ async def test_v1_chat_completions_stream_include_usage(async_client, monkeypatc
         "messages": [{"role": "user", "content": "hi"}],
         "stream": True,
         "stream_options": {"include_usage": True},
+        "prompt_cache_key": "chat_usage_1",
     }
     async with async_client.stream("POST", "/v1/chat/completions", json=payload) as resp:
         assert resp.status_code == 200

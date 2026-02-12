@@ -17,7 +17,6 @@ async def get_settings(
 ) -> DashboardSettingsResponse:
     settings = await context.service.get_settings()
     return DashboardSettingsResponse(
-        sticky_threads_enabled=settings.sticky_threads_enabled,
         prefer_earlier_reset_accounts=settings.prefer_earlier_reset_accounts,
         totp_required_on_login=settings.totp_required_on_login,
         totp_configured=settings.totp_configured,
@@ -33,7 +32,6 @@ async def update_settings(
     try:
         updated = await context.service.update_settings(
             DashboardSettingsUpdateData(
-                sticky_threads_enabled=payload.sticky_threads_enabled,
                 prefer_earlier_reset_accounts=payload.prefer_earlier_reset_accounts,
                 totp_required_on_login=(
                     payload.totp_required_on_login
@@ -49,7 +47,6 @@ async def update_settings(
         )
 
     return DashboardSettingsResponse(
-        sticky_threads_enabled=updated.sticky_threads_enabled,
         prefer_earlier_reset_accounts=updated.prefer_earlier_reset_accounts,
         totp_required_on_login=updated.totp_required_on_login,
         totp_configured=updated.totp_configured,

@@ -65,7 +65,7 @@ async def test_proxy_compact_not_implemented(async_client, monkeypatch):
 
     monkeypatch.setattr(proxy_module, "core_compact_responses", fake_compact)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": []}
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "prompt_cache_key": "compact_not_impl_1"}
     response = await async_client.post("/backend-api/codex/responses/compact", json=payload)
     assert response.status_code == 501
     assert response.json()["error"]["code"] == "not_implemented"
@@ -80,7 +80,7 @@ async def test_proxy_compact_upstream_error_propagates(async_client, monkeypatch
 
     monkeypatch.setattr(proxy_module, "core_compact_responses", fake_compact)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": []}
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "prompt_cache_key": "compact_upstream_err_1"}
     response = await async_client.post("/backend-api/codex/responses/compact", json=payload)
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "upstream_error"
@@ -102,7 +102,13 @@ async def test_proxy_stream_records_cached_and_reasoning_tokens(async_client, mo
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": [],
+        "stream": True,
+        "prompt_cache_key": "stream_tokens_1",
+    }
     request_id = "req_usage_123"
     async with async_client.stream(
         "POST",
@@ -153,7 +159,7 @@ async def test_proxy_stream_retries_rate_limit_then_success(async_client, monkey
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True, "prompt_cache_key": "retry_1"}
     async with async_client.stream(
         "POST",
         "/backend-api/codex/responses",
@@ -205,7 +211,7 @@ async def test_proxy_stream_usage_limit_returns_http_error(async_client, monkeyp
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True, "prompt_cache_key": "limit_1"}
     response = await async_client.post("/backend-api/codex/responses", json=payload)
     assert response.status_code == 429
     error = response.json()["error"]

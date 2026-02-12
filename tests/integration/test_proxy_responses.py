@@ -46,7 +46,13 @@ def _extract_first_event(lines: list[str]) -> dict:
 
 @pytest.mark.asyncio
 async def test_proxy_responses_no_accounts(async_client):
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": [],
+        "stream": True,
+        "prompt_cache_key": "integration_proxy_responses_no_accounts",
+    }
     request_id = "req_stream_123"
     async with async_client.stream(
         "POST",
@@ -75,7 +81,13 @@ async def test_proxy_responses_requires_instructions(async_client):
 
 @pytest.mark.asyncio
 async def test_v1_responses_routes(async_client):
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": [],
+        "stream": True,
+        "prompt_cache_key": "integration_v1_responses_routes",
+    }
     request_id = "req_v1_stream_123"
     async with async_client.stream(
         "POST",
@@ -96,7 +108,13 @@ async def test_v1_responses_routes(async_client):
 
 @pytest.mark.asyncio
 async def test_v1_responses_routes_under_root_path(app_instance):
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": [],
+        "stream": True,
+        "prompt_cache_key": "integration_v1_responses_routes_under_root_path",
+    }
     request_id = "req_v1_root_path_123"
     async with app_instance.router.lifespan_context(app_instance):
         transport = ASGITransport(app=app_instance, root_path="/api")
@@ -124,6 +142,7 @@ async def test_v1_responses_accepts_messages(async_client):
         "model": "gpt-5.1",
         "messages": [{"role": "user", "content": "hi"}],
         "stream": True,
+        "prompt_cache_key": "integration_v1_responses_accepts_messages",
     }
     request_id = "req_v1_messages_123"
     async with async_client.stream(
@@ -145,7 +164,12 @@ async def test_v1_responses_accepts_messages(async_client):
 
 @pytest.mark.asyncio
 async def test_v1_responses_without_instructions(async_client):
-    payload = {"model": "gpt-5.1", "input": [{"role": "user", "content": "hi"}], "stream": True}
+    payload = {
+        "model": "gpt-5.1",
+        "input": [{"role": "user", "content": "hi"}],
+        "stream": True,
+        "prompt_cache_key": "integration_v1_responses_without_instructions",
+    }
     request_id = "req_v1_no_instructions_123"
     async with async_client.stream(
         "POST",
@@ -166,7 +190,7 @@ async def test_v1_responses_without_instructions(async_client):
 
 @pytest.mark.asyncio
 async def test_v1_responses_non_streaming_failed_returns_error(async_client):
-    payload = {"model": "gpt-5.1", "input": "hi"}
+    payload = {"model": "gpt-5.1", "input": "hi", "prompt_cache_key": "integration_v1_responses_non_streaming_no_accounts"}
     resp = await async_client.post("/v1/responses", json=payload)
 
     assert resp.status_code == 503
@@ -196,7 +220,13 @@ async def test_proxy_responses_streams_upstream(async_client, monkeypatch):
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": [],
+        "stream": True,
+        "prompt_cache_key": "integration_proxy_responses_streams_upstream",
+    }
     request_id = "req_stream_123"
     async with async_client.stream(
         "POST",
@@ -240,7 +270,13 @@ async def test_proxy_responses_forces_stream(async_client, monkeypatch):
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": False}
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": [],
+        "stream": False,
+        "prompt_cache_key": "integration_proxy_responses_forces_stream",
+    }
     async with async_client.stream("POST", "/backend-api/codex/responses", json=payload) as resp:
         assert resp.status_code == 200
         lines = [line async for line in resp.aiter_lines() if line]
@@ -274,6 +310,7 @@ async def test_proxy_responses_accepts_builtin_tools(async_client, monkeypatch, 
         "input": [],
         "tools": [{"type": tool_type}],
         "stream": True,
+        "prompt_cache_key": f"integration_proxy_responses_builtin_tools_{tool_type}",
     }
     async with async_client.stream(
         "POST",
@@ -306,7 +343,13 @@ async def test_v1_responses_streams_event_sequence(async_client, monkeypatch):
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": [],
+        "stream": True,
+        "prompt_cache_key": "integration_v1_responses_streams_event_sequence",
+    }
     async with async_client.stream("POST", "/v1/responses", json=payload) as resp:
         assert resp.status_code == 200
         lines = [line async for line in resp.aiter_lines() if line]
@@ -332,7 +375,13 @@ async def test_proxy_responses_stream_large_event_line(async_client, monkeypatch
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "instructions": "hi", "input": [], "stream": True}
+    payload = {
+        "model": "gpt-5.1",
+        "instructions": "hi",
+        "input": [],
+        "stream": True,
+        "prompt_cache_key": "integration_proxy_responses_stream_large_event_line",
+    }
     request_id = "req_stream_large_123"
     async with async_client.stream(
         "POST",
@@ -368,7 +417,12 @@ async def test_v1_responses_non_streaming_returns_response(async_client, monkeyp
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "input": [{"role": "user", "content": "hi"}], "stream": False}
+    payload = {
+        "model": "gpt-5.1",
+        "input": [{"role": "user", "content": "hi"}],
+        "stream": False,
+        "prompt_cache_key": "integration_v1_responses_non_streaming_returns_response",
+    }
     resp = await async_client.post("/v1/responses", json=payload)
 
     assert resp.status_code == 200
@@ -396,7 +450,12 @@ async def test_v1_responses_non_streaming_preserves_sse_error_payload(async_clie
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "input": "hi", "stream": False}
+    payload = {
+        "model": "gpt-5.1",
+        "input": "hi",
+        "stream": False,
+        "prompt_cache_key": "integration_v1_responses_non_streaming_preserves_sse_error_payload",
+    }
     resp = await async_client.post("/v1/responses", json=payload)
 
     assert resp.status_code == 503
@@ -423,7 +482,12 @@ async def test_v1_responses_non_streaming_failed_without_status_returns_error(as
 
     monkeypatch.setattr(proxy_module, "core_stream_responses", fake_stream)
 
-    payload = {"model": "gpt-5.1", "input": "hi", "stream": False}
+    payload = {
+        "model": "gpt-5.1",
+        "input": "hi",
+        "stream": False,
+        "prompt_cache_key": "integration_v1_responses_non_streaming_failed_without_status_returns_error",
+    }
     resp = await async_client.post("/v1/responses", json=payload)
 
     assert resp.status_code == 503
@@ -436,6 +500,7 @@ async def test_v1_responses_non_streaming_failed_without_status_returns_error(as
 async def test_v1_responses_invalid_messages_returns_openai_400(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "integration_v1_responses_invalid_messages",
         "messages": [
             {
                 "role": "system",
@@ -457,6 +522,7 @@ async def test_v1_responses_invalid_messages_returns_openai_400(async_client):
 async def test_v1_responses_compact_invalid_messages_returns_openai_400(async_client):
     payload = {
         "model": "gpt-5.2",
+        "prompt_cache_key": "integration_v1_responses_compact_invalid_messages",
         "messages": [
             {
                 "role": "developer",

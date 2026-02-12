@@ -19,6 +19,7 @@ async def test_codex_style_responses_payload_is_accepted(async_client):
     payload = {
         "model": "gpt-5.1",
         "instructions": "You are Codex.",
+        "prompt_cache_key": "test_codex_style_1",
         "input": [
             {
                 "role": "user",
