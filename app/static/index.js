@@ -17,15 +17,8 @@
 		oauthStatus: "/api/oauth/status",
 		oauthComplete: "/api/oauth/complete",
 		settings: "/api/settings",
-		dashboardAuthSession: "/api/dashboard-auth/session",
-		dashboardAuthTotpVerify: "/api/dashboard-auth/totp/verify",
-		dashboardAuthTotpSetupStart: "/api/dashboard-auth/totp/setup/start",
-		dashboardAuthTotpSetupConfirm: "/api/dashboard-auth/totp/setup/confirm",
-		dashboardAuthTotpDisable: "/api/dashboard-auth/totp/disable",
-		dashboardAuthLogout: "/api/dashboard-auth/logout",
 	};
 
-	const DASHBOARD_SETUP_TOKEN_HEADER = "X-Codex-LB-Setup-Token";
 	const AUTO_REFRESH_STORAGE_KEY = "codex_lb_dashboard_auto_refresh_v1";
 	const AUTO_REFRESH_DEFAULT_SECONDS = 30;
 	const AUTO_REFRESH_MIN_SECONDS = 10;
@@ -1471,10 +1464,9 @@
 		);
 	};
 
-			const normalizeSettingsPayload = (payload) => ({
-				totpRequiredOnLogin: Boolean(payload?.totpRequiredOnLogin),
-				totpConfigured: Boolean(payload?.totpConfigured),
-			});
+	const normalizeSettingsPayload = (payload) => ({
+		preferEarlierResetAccounts: Boolean(payload?.preferEarlierResetAccounts),
+	});
 
 	const fetchSettings = async () => {
 		const payload = await fetchJson(API_ENDPOINTS.settings, "settings");
@@ -1509,22 +1501,12 @@
 				hasLoaded: false,
 			},
 
-							settings: {
-								totpRequiredOnLogin: false,
-								totpConfigured: false,
-								setupToken: "",
-						totpSetup: {
-							open: false,
-							secret: "",
-							otpauthUri: "",
-						qrSvgDataUri: "",
-						code: "",
-						isSubmitting: false,
-					},
-					isLoading: false,
-					isSaving: false,
-					hasLoaded: false,
-				},
+			settings: {
+				preferEarlierResetAccounts: false,
+				isLoading: false,
+				isSaving: false,
+				hasLoaded: false,
+			},
 			accounts: {
 				selectedId: "",
 				rows: [],
@@ -1586,20 +1568,6 @@
 					this.refreshRequests();
 				});
 
-				try {
-					const shouldContinue = await this.ensureDashboardAccess();
-					if (!shouldContinue) {
-						return;
-					}
-				} catch (error) {
-					this.isLoading = false;
-					this.openMessageBox({
-						tone: "error",
-						title: "Authentication required",
-						message: error?.message || "TOTP verification is required to access the dashboard.",
-					});
-					return;
-				}
 				await this.loadData();
 				this.$watch("autoRefresh.enabled", () => {
 					this.persistAutoRefresh();
@@ -1758,10 +1726,10 @@
 				}
 				this.settings.isLoading = true;
 				this.settingsLoadPromise = (async () => {
-						try {
-								const settings = await fetchSettings();
-								this.settings.totpRequiredOnLogin = settings.totpRequiredOnLogin;
-								this.settings.totpConfigured = settings.totpConfigured;
+					try {
+						const settings = await fetchSettings();
+						this.settings.preferEarlierResetAccounts =
+							settings.preferEarlierResetAccounts;
 						this.settings.hasLoaded = true;
 					} catch (err) {
 						console.error("Failed to load settings:", err);
@@ -1851,261 +1819,15 @@
 				return `${list.length} ${plural}`;
 			},
 
-			timeframeLabel(value) {
+				timeframeLabel(value) {
 				const labels = {
 					all: "All time",
 					"1h": "Last 1h",
 					"24h": "Last 24h",
 					"7d": "Last 7d",
 				};
-				return labels[value] || "All time";
-			},
-			async ensureDashboardAccess() {
-				const session = await fetchJson(
-					API_ENDPOINTS.dashboardAuthSession,
-					"dashboard auth session",
-				);
-				if (session?.authenticated) {
-					return true;
-				}
-				if (!session?.totpRequiredOnLogin) {
-					return true;
-				}
-				await this.verifyTotpWithPrompt();
-				if (window.location.pathname !== "/dashboard") {
-					window.location.replace("/dashboard");
-					return false;
-				}
-				this.view = "dashboard";
-				this.syncTitle();
-				this.syncUrl(true);
-				return true;
-			},
-				async verifyTotpWithPrompt() {
-				let lastError = "";
-				while (true) {
-					const promptLines = [
-						"Enter the 6-digit TOTP code to access the dashboard.",
-					];
-					if (lastError) {
-						promptLines.push(`Last error: ${lastError}`);
-					}
-					const rawCode = window.prompt(promptLines.join("\n"));
-					if (rawCode === null) {
-						throw new Error("TOTP verification was cancelled.");
-					}
-					const code = String(rawCode || "")
-						.trim()
-						.replace(/\D/g, "");
-					if (!code) {
-						lastError = "Code is required.";
-						continue;
-					}
-					try {
-						await postJson(
-							API_ENDPOINTS.dashboardAuthTotpVerify,
-							{ code },
-							"verify TOTP",
-						);
-						return;
-					} catch (error) {
-						lastError = error?.message || "Invalid TOTP code.";
-					}
-				}
+					return labels[value] || "All time";
 				},
-				setupTokenOptions() {
-					const token = String(this.settings.setupToken || "").trim();
-					if (!token) {
-						return {};
-					}
-					return {
-						headers: {
-							[DASHBOARD_SETUP_TOKEN_HEADER]: token,
-						},
-					};
-				},
-				promptSetupToken() {
-					const rawToken = window.prompt(
-						"Enter dashboard setup token (CODEX_LB_DASHBOARD_SETUP_TOKEN).",
-					);
-					if (rawToken === null) {
-						return "";
-					}
-					const token = String(rawToken || "").trim();
-					this.settings.setupToken = token;
-					return token;
-				},
-				async setupTotp() {
-					try {
-						const started = await postJson(
-							API_ENDPOINTS.dashboardAuthTotpSetupStart,
-							{},
-							"start TOTP setup",
-							this.setupTokenOptions(),
-						);
-						this.settings.totpSetup.open = true;
-						this.settings.totpSetup.secret = started.secret || "";
-						this.settings.totpSetup.otpauthUri = started.otpauthUri || "";
-						this.settings.totpSetup.qrSvgDataUri = started.qrSvgDataUri || "";
-						this.settings.totpSetup.code = "";
-					} catch (error) {
-						const errorCode = String(error?.payload?.error?.code || "");
-						if (error?.status === 403 && errorCode === "dashboard_setup_forbidden") {
-							const token = this.promptSetupToken();
-							if (token) {
-								try {
-									const started = await postJson(
-										API_ENDPOINTS.dashboardAuthTotpSetupStart,
-										{},
-										"start TOTP setup",
-										this.setupTokenOptions(),
-									);
-									this.settings.totpSetup.open = true;
-									this.settings.totpSetup.secret = started.secret || "";
-									this.settings.totpSetup.otpauthUri = started.otpauthUri || "";
-									this.settings.totpSetup.qrSvgDataUri =
-										started.qrSvgDataUri || "";
-									this.settings.totpSetup.code = "";
-									return;
-								} catch (retryError) {
-									error = retryError;
-								}
-							}
-						}
-						this.openMessageBox({
-							tone: "error",
-							title: "TOTP setup failed",
-							message: error.message || "Failed to configure TOTP.",
-					});
-				}
-			},
-			cancelTotpSetup() {
-				this.settings.totpSetup.open = false;
-				this.settings.totpSetup.secret = "";
-				this.settings.totpSetup.otpauthUri = "";
-				this.settings.totpSetup.qrSvgDataUri = "";
-				this.settings.totpSetup.code = "";
-				this.settings.totpSetup.isSubmitting = false;
-			},
-			async confirmTotpSetup() {
-				if (this.settings.totpSetup.isSubmitting) {
-					return;
-				}
-				const secret = String(this.settings.totpSetup.secret || "").trim();
-				const code = String(this.settings.totpSetup.code || "")
-					.trim()
-					.replace(/\D/g, "");
-				if (!secret || !code) {
-					this.openMessageBox({
-						tone: "warning",
-						title: "TOTP setup",
-						message: "Enter the 6-digit code from your authenticator app.",
-					});
-					return;
-				}
-
-					this.settings.totpSetup.isSubmitting = true;
-					try {
-						await postJson(
-							API_ENDPOINTS.dashboardAuthTotpSetupConfirm,
-							{ secret, code },
-							"confirm TOTP setup",
-							this.setupTokenOptions(),
-						);
-						this.settings.totpConfigured = true;
-						this.cancelTotpSetup();
-						this.openMessageBox({
-						tone: "success",
-						title: "TOTP enabled",
-						message: "TOTP secret configured successfully.",
-						});
-					} catch (error) {
-						const errorCode = String(error?.payload?.error?.code || "");
-						if (error?.status === 403 && errorCode === "dashboard_setup_forbidden") {
-							const token = this.promptSetupToken();
-							if (token) {
-								try {
-									await postJson(
-										API_ENDPOINTS.dashboardAuthTotpSetupConfirm,
-										{ secret, code },
-										"confirm TOTP setup",
-										this.setupTokenOptions(),
-									);
-									this.settings.totpConfigured = true;
-									this.cancelTotpSetup();
-									this.openMessageBox({
-										tone: "success",
-										title: "TOTP enabled",
-										message: "TOTP secret configured successfully.",
-									});
-									return;
-								} catch (retryError) {
-									error = retryError;
-								}
-							}
-						}
-						this.openMessageBox({
-							tone: "error",
-							title: "TOTP setup failed",
-							message: error.message || "Failed to confirm TOTP setup.",
-					});
-				} finally {
-					this.settings.totpSetup.isSubmitting = false;
-				}
-			},
-			async disableTotp() {
-				const rawCode = window.prompt(
-					"Enter the current 6-digit TOTP code to disable TOTP.",
-				);
-				const code = String(rawCode || "")
-					.trim()
-					.replace(/\D/g, "");
-					if (!code) {
-						return;
-					}
-					const handleDisabled = () => {
-						this.settings.totpConfigured = false;
-						this.settings.totpRequiredOnLogin = false;
-						this.openMessageBox({
-							tone: "success",
-							title: "TOTP disabled",
-							message: "TOTP protection has been removed.",
-						});
-					};
-					try {
-						await postJson(
-							API_ENDPOINTS.dashboardAuthTotpDisable,
-							{ code },
-							"disable TOTP",
-						);
-						handleDisabled();
-					} catch (error) {
-						const errorCode = String(error?.payload?.error?.code || "");
-						if (error?.status === 401 && errorCode === "totp_required") {
-							try {
-								await postJson(
-									API_ENDPOINTS.dashboardAuthTotpVerify,
-									{ code },
-									"verify TOTP",
-								);
-								await postJson(
-									API_ENDPOINTS.dashboardAuthTotpDisable,
-									{ code },
-									"disable TOTP",
-								);
-								handleDisabled();
-								return;
-							} catch (retryError) {
-								error = retryError;
-							}
-						}
-						this.openMessageBox({
-							tone: "error",
-							title: "TOTP disable failed",
-							message: error.message || "Failed to disable TOTP.",
-					});
-				}
-			},
 
 			async loadData() {
 				try {
@@ -2179,7 +1901,7 @@
 					this.refreshPromise = null;
 				}
 			},
-			applyData(data, preferredId) {
+				applyData(data, preferredId) {
 				this.accounts.rows = Array.isArray(data.accounts) ? data.accounts : [];
 				const hasPreferred =
 					preferredId &&
@@ -2194,26 +1916,20 @@
 				) {
 					this.accounts.selectedId = this.accounts.rows[0]?.id || "";
 				} else if (!this.accounts.selectedId && this.accounts.rows.length > 0) {
-					this.accounts.selectedId = this.accounts.rows[0].id;
-				}
-					this.dashboardData = buildDashboardDataFromApi({
-						summary: data.summary,
-						primaryUsage: data.primaryUsage,
-						secondaryUsage: data.secondaryUsage,
-						requestLogs: data.requestLogs,
-						lastSyncAt: data.lastSyncAt,
-					});
-						if (data.settings) {
-							this.settings.totpRequiredOnLogin = Boolean(
-								data.settings.totpRequiredOnLogin,
-							);
-							this.settings.totpConfigured = Boolean(data.settings.totpConfigured);
-						}
-					this.ui.usageWindows = buildUsageWindowConfig(data.summary);
-					this.dashboard = buildDashboardView(this);
-					this.syncAccountSearchSelection();
-				},
-			async saveSettings() {
+						this.accounts.selectedId = this.accounts.rows[0].id;
+					}
+						this.dashboardData = buildDashboardDataFromApi({
+							summary: data.summary,
+							primaryUsage: data.primaryUsage,
+							secondaryUsage: data.secondaryUsage,
+							requestLogs: data.requestLogs,
+							lastSyncAt: data.lastSyncAt,
+						});
+						this.ui.usageWindows = buildUsageWindowConfig(data.summary);
+						this.dashboard = buildDashboardView(this);
+						this.syncAccountSearchSelection();
+					},
+				async saveSettings() {
 				if (this.settings.isSaving) {
 					return;
 				}
@@ -2222,27 +1938,24 @@
 					if (!this.settings.hasLoaded) {
 						return;
 					}
-				}
-				this.settings.isSaving = true;
-					try {
+					}
+					this.settings.isSaving = true;
+						try {
 							const payload = {
-								totpRequiredOnLogin: this.settings.totpRequiredOnLogin,
+								preferEarlierResetAccounts: this.settings.preferEarlierResetAccounts,
 							};
 							const updated = await putJson(
 							API_ENDPOINTS.settings,
 							payload,
-							"save settings",
-						);
+						"save settings",
+					);
 							const normalized = normalizeSettingsPayload(updated);
-							this.settings.totpRequiredOnLogin = normalized.totpRequiredOnLogin;
-							this.settings.totpConfigured = normalized.totpConfigured;
-					if (this.settings.totpRequiredOnLogin) {
-						await this.ensureDashboardAccess();
-					}
-					this.openMessageBox({
-						tone: "success",
-						title: "Settings saved",
-						message: "Settings updated.",
+							this.settings.preferEarlierResetAccounts =
+								normalized.preferEarlierResetAccounts;
+						this.openMessageBox({
+							tone: "success",
+							title: "Settings saved",
+							message: "Settings updated.",
 					});
 				} catch (error) {
 					this.openMessageBox({

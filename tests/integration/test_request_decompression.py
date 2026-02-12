@@ -13,7 +13,7 @@ pytestmark = pytest.mark.integration
 @pytest.mark.asyncio
 async def test_zstd_request_decompression(async_client, monkeypatch):
     payload = {
-        "totpRequiredOnLogin": False,
+        "preferEarlierResetAccounts": False,
     }
     body = json.dumps(payload).encode("utf-8")
 
@@ -28,13 +28,13 @@ async def test_zstd_request_decompression(async_client, monkeypatch):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["totpRequiredOnLogin"] is False
+    assert data["preferEarlierResetAccounts"] is False
 
 
 @pytest.mark.asyncio
 async def test_zstd_request_decompression_rejects_large_payload(async_client, monkeypatch):
     payload = {
-        "totpRequiredOnLogin": False,
+        "preferEarlierResetAccounts": False,
         "padding": "A" * 512,
     }
     body = json.dumps(payload).encode("utf-8")

@@ -4,9 +4,8 @@ from app.modules.shared.schemas import DashboardModel
 
 
 class DashboardSettingsResponse(DashboardModel):
-    totp_required_on_login: bool
-    totp_configured: bool
+    prefer_earlier_reset_accounts: bool
 
 
 class DashboardSettingsUpdateRequest(DashboardModel):
-    totp_required_on_login: bool | None = None
+    prefer_earlier_reset_accounts: bool
