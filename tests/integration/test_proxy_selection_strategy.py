@@ -287,4 +287,3 @@ async def test_proxy_selection_strategy_db_stickiness_persists_and_reallocates(m
         pinned = await balancer_3.select_account(sticky_key=sticky_key)
         assert pinned.account is not None
         assert pinned.account.id == account_late.id
-
