@@ -6,6 +6,8 @@ import os
 import anyio
 import uvicorn
 
+from app.core.config.settings import get_settings
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the codex-lb API server.")
@@ -33,6 +35,7 @@ def main() -> None:
     args = _parse_args()
 
     if args.command is None:
+        settings = get_settings()
         if bool(args.ssl_certfile) ^ bool(args.ssl_keyfile):
             raise SystemExit("Both --ssl-certfile and --ssl-keyfile must be provided together.")
 
@@ -42,6 +45,7 @@ def main() -> None:
             port=args.port,
             ssl_certfile=args.ssl_certfile,
             ssl_keyfile=args.ssl_keyfile,
+            access_log=settings.access_log_enabled,
         )
         return
 

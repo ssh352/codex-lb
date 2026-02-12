@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 import aiohttp
 from aiohttp_retry import RetryClient
+
+from app.core.config.settings import get_settings
 
 
 @dataclass(slots=True)
@@ -22,9 +25,28 @@ async def init_http_client() -> HttpClient:
 
     # Create ClientSession with trust_env=True to automatically use proxy settings
     # from environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
+    settings = get_settings()
+    # aiohttp warns on Python 3.14+ that `enable_cleanup_closed` is ignored; avoid
+    # passing it there while preserving behavior on older runtimes.
+    if sys.version_info < (3, 14):
+        connector = aiohttp.TCPConnector(
+            limit=settings.http_client_connector_limit,
+            limit_per_host=settings.http_client_connector_limit_per_host,
+            keepalive_timeout=settings.http_client_keepalive_timeout_seconds,
+            ttl_dns_cache=settings.http_client_dns_cache_ttl_seconds,
+            enable_cleanup_closed=True,
+        )
+    else:
+        connector = aiohttp.TCPConnector(
+            limit=settings.http_client_connector_limit,
+            limit_per_host=settings.http_client_connector_limit_per_host,
+            keepalive_timeout=settings.http_client_keepalive_timeout_seconds,
+            ttl_dns_cache=settings.http_client_dns_cache_ttl_seconds,
+        )
     session = aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=None),
-        trust_env=True  # Enable proxy support from environment variables
+        connector=connector,
+        trust_env=True,  # Enable proxy support from environment variables
     )
     retry_client = RetryClient(client_session=session, raise_for_status=False, trust_env=True)
     _http_client = HttpClient(session=session, retry_client=retry_client)

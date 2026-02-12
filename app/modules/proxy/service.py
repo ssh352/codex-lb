@@ -11,7 +11,7 @@ from typing import AsyncIterator, Mapping
 import anyio
 
 from app.core import usage as usage_core
-from app.core.auth.refresh import RefreshError
+from app.core.auth.refresh import RefreshError, should_refresh
 from app.core.balancer import PERMANENT_FAILURE_CODES
 from app.core.balancer.types import UpstreamError
 from app.core.clients.proxy import ProxyResponseError, filter_inbound_headers
@@ -104,7 +104,7 @@ class ProxyService:
                 503,
                 openai_error("no_accounts", selection.error_message or "No active accounts available"),
             )
-        account = await self._ensure_fresh(account)
+        account = await self._ensure_fresh_if_needed(account)
         account_id = _header_account_id(account.chatgpt_account_id)
 
         async def _call_compact(target: Account) -> OpenAIResponsePayload:
@@ -234,7 +234,7 @@ class ProxyService:
 
             account_id_value = account.id
             try:
-                account = await self._ensure_fresh(account)
+                account = await self._ensure_fresh_if_needed(account)
                 async for line in self._stream_once(
                     account,
                     payload,
@@ -483,6 +483,11 @@ class ProxyService:
         async with self._repo_factory() as repos:
             auth_manager = AuthManager(repos.accounts)
             return await auth_manager.ensure_fresh(account, force=force)
+
+    async def _ensure_fresh_if_needed(self, account: Account) -> Account:
+        if account.chatgpt_account_id and not should_refresh(account.last_refresh):
+            return account
+        return await self._ensure_fresh(account)
 
     async def _handle_proxy_error(self, account: Account, exc: ProxyResponseError) -> None:
         error = _parse_openai_error(exc.payload)

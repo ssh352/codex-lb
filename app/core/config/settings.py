@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     log_proxy_request_shape: bool = False
     log_proxy_request_shape_raw_cache_key: bool = False
     log_proxy_request_payload: bool = False
+    access_log_enabled: bool = False
     max_decompressed_body_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
     image_inline_fetch_enabled: bool = True
     image_inline_allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
@@ -93,6 +94,10 @@ class Settings(BaseSettings):
     # - "reset_bucket": select earlier secondary reset bucket first.
     # - "waste_pressure": select highest estimated secondary quota waste pressure first.
     proxy_selection_strategy: Literal["usage", "reset_bucket", "waste_pressure"] = "usage"
+    http_client_connector_limit: int = Field(default=256, gt=0)
+    http_client_connector_limit_per_host: int = Field(default=0, ge=0)
+    http_client_keepalive_timeout_seconds: float = Field(default=30.0, gt=0)
+    http_client_dns_cache_ttl_seconds: int = Field(default=300, ge=0)
 
     @field_validator("database_url")
     @classmethod
@@ -118,8 +123,7 @@ class Settings(BaseSettings):
     def _validate_split_db(self) -> Settings:
         if self.accounts_database_url == self.database_url:
             raise ValueError(
-                "accounts_database_url must be different from database_url "
-                "(split accounts DB is required)"
+                "accounts_database_url must be different from database_url (split accounts DB is required)"
             )
         return self
 

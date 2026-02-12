@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -17,12 +18,22 @@ def _get_or_create_key(key_file: Path) -> bytes:
     return key
 
 
+@lru_cache(maxsize=8)
+def _get_or_create_key_cached(key_file: str) -> bytes:
+    return _get_or_create_key(Path(key_file))
+
+
+@lru_cache(maxsize=8)
+def _get_fernet(key: bytes) -> Fernet:
+    return Fernet(key)
+
+
 class TokenEncryptor:
     def __init__(self, key: bytes | None = None, key_file: Path | None = None) -> None:
         settings = get_settings()
         resolved_file = key_file or settings.encryption_key_file
-        resolved_key = key or _get_or_create_key(resolved_file)
-        self._fernet = Fernet(resolved_key)
+        resolved_key = key or _get_or_create_key_cached(str(resolved_file))
+        self._fernet = _get_fernet(resolved_key)
 
     def encrypt(self, token: str) -> bytes:
         return self._fernet.encrypt(token.encode())
@@ -34,4 +45,4 @@ class TokenEncryptor:
 def get_or_create_key(key_file: Path | None = None) -> bytes:
     settings = get_settings()
     resolved_file = key_file or settings.encryption_key_file
-    return _get_or_create_key(resolved_file)
+    return _get_or_create_key_cached(str(resolved_file))
