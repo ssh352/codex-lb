@@ -77,10 +77,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Basic latency sampling for POST /backend-api/codex/responses/compact."
     )
-    parser.add_argument("--base-url", default="http://127.0.0.1:2456")
+    parser.add_argument("--base-url", default="http://127.0.0.1:2455")
     parser.add_argument("--requests", type=int, default=200)
     parser.add_argument("--concurrency", type=int, default=20)
-    parser.add_argument("--prompt-cache-key", default=None)
+    parser.add_argument("--prompt-cache-key", default="perf")
     args = parser.parse_args()
 
     asyncio.run(

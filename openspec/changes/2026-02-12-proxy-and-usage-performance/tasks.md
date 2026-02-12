@@ -6,4 +6,5 @@
 - [x] Add request log buffering + background flusher (enabled by default).
 - [x] Make usage refresh fetch concurrent with configurable concurrency.
 - [x] Clarify snapshot TTL “freshness” tradeoff and recommended values.
-- [ ] Add perf regression benchmarks for proxy compact + streaming with sticky enabled.
+- [x] Document high-impact tuning checklist + benchmark plan.
+- [x] Add perf regression benchmarks for proxy compact + streaming with sticky enabled.
