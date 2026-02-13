@@ -99,6 +99,16 @@ Add the following to `~/.config/opencode/opencode.json`:
 
 All settings use the `CODEX_LB_` prefix and can be set via environment variables or `.env.local`.
 
+## Troubleshooting
+
+### Debugging missing `prompt_cache_key` / stickiness issues
+
+Enable request logging on the proxy:
+
+- `CODEX_LB_LOG_PROXY_REQUEST_SHAPE=1`: logs request shape (model, stream/compact, input summary, extra keys, and a hashed `prompt_cache_key`).
+- `CODEX_LB_LOG_PROXY_REQUEST_SHAPE_RAW_CACHE_KEY=1`: additionally logs a truncated raw `prompt_cache_key` (use with care).
+- `CODEX_LB_LOG_PROXY_REQUEST_PAYLOAD=1`: logs the full JSON payload (likely contains sensitive prompt data; use with care).
+
 ## Data
 
 Data storage locations:

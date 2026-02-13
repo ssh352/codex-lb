@@ -63,3 +63,7 @@ Non-streaming request/response:
 - Pre-release: run unit/integration tests and optional OpenAI client compatibility tests.
 - Smoke tests: stream a response, validate non-stream responses, and verify error envelopes.
 - Post-deploy: monitor `no_accounts`, `stream_incomplete`, and `upstream_unavailable`.
+- To debug client routing/stickiness metadata, enable proxy logging:
+  - `CODEX_LB_LOG_PROXY_REQUEST_SHAPE=1` (includes a hashed `prompt_cache_key`)
+  - `CODEX_LB_LOG_PROXY_REQUEST_SHAPE_RAW_CACHE_KEY=1` (adds a truncated raw `prompt_cache_key`; use with care)
+  - `CODEX_LB_LOG_PROXY_REQUEST_PAYLOAD=1` (logs full request JSON; likely contains sensitive prompt data)
