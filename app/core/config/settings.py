@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     log_proxy_request_shape: bool = False
     log_proxy_request_shape_raw_cache_key: bool = False
     log_proxy_request_payload: bool = False
+    # Uvicorn per-request access logs (uvicorn.access).
+    #
+    # Disabled by default to reduce stdout/stderr I/O overhead and log noise on the proxy hot path.
+    # Enable with `CODEX_LB_ACCESS_LOG_ENABLED=true` when debugging.
     access_log_enabled: bool = False
     max_decompressed_body_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
     image_inline_fetch_enabled: bool = True

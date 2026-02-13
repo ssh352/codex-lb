@@ -45,6 +45,7 @@ def main() -> None:
             port=args.port,
             ssl_certfile=args.ssl_certfile,
             ssl_keyfile=args.ssl_keyfile,
+            # Keep access logs off by default for performance; controlled via `CODEX_LB_ACCESS_LOG_ENABLED`.
             access_log=settings.access_log_enabled,
         )
         return
