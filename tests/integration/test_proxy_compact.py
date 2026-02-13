@@ -97,7 +97,7 @@ async def test_proxy_compact_success(async_client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_proxy_compact_without_prompt_cache_key_returns_400(async_client, monkeypatch):
+async def test_proxy_compact_without_prompt_cache_key_is_allowed(async_client, monkeypatch):
     email = "compact-nosticky@example.com"
     raw_account_id = "acc_compact_nosticky"
     auth_json = _make_auth_json(raw_account_id, email)
@@ -106,9 +106,11 @@ async def test_proxy_compact_without_prompt_cache_key_returns_400(async_client, 
     assert response.status_code == 200
 
     expected_account_id = generate_unique_account_id(raw_account_id, email)
+    seen: dict[str, str | None] = {"account_id": None}
 
     async def fake_compact(payload, headers, access_token, account_id):
-        raise AssertionError("core_compact_responses should not be called without prompt_cache_key")
+        seen["account_id"] = account_id
+        return OpenAIResponsePayload.model_validate({"output": []})
 
     monkeypatch.setattr(proxy_module, "core_compact_responses", fake_compact)
 
@@ -127,10 +129,9 @@ async def test_proxy_compact_without_prompt_cache_key_returns_400(async_client, 
 
     payload = {"model": "gpt-5.1", "instructions": "hi", "input": []}
     response = await async_client.post("/backend-api/codex/responses/compact", json=payload)
-    assert response.status_code == 400
-    error = response.json()["error"]
-    assert error["code"] == "missing_prompt_cache_key"
-    assert error["type"] == "invalid_request_error"
+    assert response.status_code == 200
+    assert response.json()["output"] == []
+    assert seen["account_id"] == raw_account_id
 
 
 @pytest.mark.asyncio

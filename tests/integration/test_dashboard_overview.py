@@ -10,6 +10,7 @@ from app.db.models import Account, AccountStatus
 from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.request_logs.repository import RequestLogsRepository
+from app.modules.settings.repository import SettingsRepository
 from app.modules.usage.repository import UsageRepository
 
 pytestmark = pytest.mark.integration
@@ -77,3 +78,21 @@ async def test_dashboard_overview_combines_data(async_client, db_setup):
     assert payload["windows"]["secondary"]["windowKey"] == "secondary"
     assert len(payload["requestLogs"]) == 1
     assert payload["lastSyncAt"] == secondary_time.isoformat() + "Z"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_overview_marks_pinned_accounts(async_client, db_setup):
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(_make_account("acc_pin_dash", "pin_dash@example.com"))
+
+    async with SessionLocal() as session:
+        settings_repo = SettingsRepository(session)
+        await settings_repo.update(pinned_account_ids=["acc_pin_dash"])
+
+    response = await async_client.get("/api/dashboard/overview?requestLimit=10&requestOffset=0")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next((account for account in payload["accounts"] if account["accountId"] == "acc_pin_dash"), None)
+    assert matched is not None
+    assert matched["pinned"] is True

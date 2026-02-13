@@ -161,3 +161,114 @@ async def test_load_balancer_reactivates_after_secondary_reset(db_setup):
         assert refreshed is not None
         await accounts_session.refresh(refreshed)
         assert refreshed.status == AccountStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_load_balancer_routes_within_pinned_pool(db_setup):
+    encryptor = TokenEncryptor()
+    now = utcnow()
+    now_epoch = int(now.replace(tzinfo=timezone.utc).timestamp())
+
+    acc_pinned = Account(
+        id="acc_pool_a",
+        email="pool_a@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access-a"),
+        refresh_token_encrypted=encryptor.encrypt("refresh-a"),
+        id_token_encrypted=encryptor.encrypt("id-a"),
+        last_refresh=now,
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+    acc_other = Account(
+        id="acc_pool_b",
+        email="pool_b@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access-b"),
+        refresh_token_encrypted=encryptor.encrypt("refresh-b"),
+        id_token_encrypted=encryptor.encrypt("id-b"),
+        last_refresh=now,
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(acc_pinned)
+        await accounts_repo.upsert(acc_other)
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
+        settings_repo = SettingsRepository(session)
+        await settings_repo.update(pinned_account_ids=[acc_pinned.id])
+        await usage_repo.add_entry(
+            account_id=acc_pinned.id,
+            used_percent=80.0,
+            window="primary",
+            reset_at=now_epoch + 3600,
+            window_minutes=300,
+        )
+        await usage_repo.add_entry(
+            account_id=acc_other.id,
+            used_percent=5.0,
+            window="primary",
+            reset_at=now_epoch + 3600,
+            window_minutes=300,
+        )
+
+    balancer = LoadBalancer(_repo_factory)
+    selection = await balancer.select_account(sticky_key="pool_1")
+    assert selection.account is not None
+    assert selection.account.id == acc_pinned.id
+
+
+@pytest.mark.asyncio
+async def test_load_balancer_falls_back_when_pinned_pool_unavailable(db_setup):
+    encryptor = TokenEncryptor()
+    now = utcnow()
+    now_epoch = int(now.replace(tzinfo=timezone.utc).timestamp())
+
+    acc_pinned = Account(
+        id="acc_pool_paused",
+        email="pool_paused@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access-a"),
+        refresh_token_encrypted=encryptor.encrypt("refresh-a"),
+        id_token_encrypted=encryptor.encrypt("id-a"),
+        last_refresh=now,
+        status=AccountStatus.PAUSED,
+        deactivation_reason=None,
+    )
+    acc_other = Account(
+        id="acc_pool_fallback",
+        email="pool_fallback@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access-b"),
+        refresh_token_encrypted=encryptor.encrypt("refresh-b"),
+        id_token_encrypted=encryptor.encrypt("id-b"),
+        last_refresh=now,
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(acc_pinned)
+        await accounts_repo.upsert(acc_other)
+
+    async with SessionLocal() as session:
+        settings_repo = SettingsRepository(session)
+        usage_repo = UsageRepository(session)
+        await settings_repo.update(pinned_account_ids=[acc_pinned.id])
+        await usage_repo.add_entry(
+            account_id=acc_other.id,
+            used_percent=10.0,
+            window="primary",
+            reset_at=now_epoch + 3600,
+            window_minutes=300,
+        )
+
+    balancer = LoadBalancer(_repo_factory)
+    selection = await balancer.select_account(sticky_key="pool_2")
+    assert selection.account is not None
+    assert selection.account.id == acc_other.id

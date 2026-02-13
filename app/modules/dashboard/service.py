@@ -27,12 +27,14 @@ class DashboardService:
         accounts = await self._repo.list_accounts()
         primary_usage = await self._repo.latest_usage_by_account("primary")
         secondary_usage = await self._repo.latest_usage_by_account("secondary")
+        pinned_account_ids = set(await self._repo.pinned_account_ids())
 
         account_summaries = build_account_summaries(
             accounts=accounts,
             primary_usage=primary_usage,
             secondary_usage=secondary_usage,
             encryptor=self._encryptor,
+            pinned_account_ids=pinned_account_ids,
         )
 
         primary_rows = _rows_from_latest(primary_usage)

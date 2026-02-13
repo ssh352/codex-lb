@@ -100,6 +100,7 @@ class DashboardSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     sticky_threads_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     prefer_earlier_reset_accounts: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pinned_account_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     totp_required_on_login: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     totp_secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     totp_last_verified_step: Mapped[int | None] = mapped_column(Integer, nullable=True)

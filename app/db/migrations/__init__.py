@@ -12,6 +12,7 @@ from app.db.migrations.versions import (
     add_accounts_chatgpt_account_id,
     add_accounts_reset_at,
     add_dashboard_settings,
+    add_dashboard_settings_pins,
     add_dashboard_settings_totp,
     add_request_logs_reasoning_effort,
     add_usage_history_window_index,
@@ -50,6 +51,7 @@ MIGRATIONS: Final[tuple[Migration, ...]] = (
     Migration("006_add_dashboard_settings_totp", "main", add_dashboard_settings_totp.run),
     Migration("007_add_usage_history_window_index", "main", add_usage_history_window_index.run),
     Migration("008_remove_main_db_account_foreign_keys", "main", remove_main_db_account_foreign_keys.run),
+    Migration("009_add_dashboard_settings_pins", "main", add_dashboard_settings_pins.run),
 )
 
 

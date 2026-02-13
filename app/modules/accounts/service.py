@@ -22,6 +22,7 @@ from app.modules.accounts.schemas import (
     AccountImportResponse,
     AccountSummary,
 )
+from app.modules.settings.repository import SettingsRepository
 from app.modules.usage.repository import UsageRepository
 from app.modules.usage.updater import UsageUpdater
 
@@ -32,10 +33,12 @@ class AccountsService:
         repo: AccountsRepository,
         data_repo: AccountsDataRepository | None = None,
         usage_repo: UsageRepository | None = None,
+        settings_repo: SettingsRepository | None = None,
     ) -> None:
         self._repo = repo
         self._data_repo = data_repo
         self._usage_repo = usage_repo
+        self._settings_repo = settings_repo
         self._usage_updater = UsageUpdater(usage_repo, repo) if usage_repo else None
         self._encryptor = TokenEncryptor()
 
@@ -53,11 +56,13 @@ class AccountsService:
             else:
                 primary_usage = {}
                 secondary_usage = {}
+            pinned_ids = set(await self._settings_repo.pinned_account_ids()) if self._settings_repo else set()
             return build_account_summaries(
                 accounts=accounts,
                 primary_usage=primary_usage,
                 secondary_usage=secondary_usage,
                 encryptor=self._encryptor,
+                pinned_account_ids=pinned_ids,
             )
 
         return await get_or_build_accounts_list(_build)
@@ -116,3 +121,29 @@ class AccountsService:
         if success:
             type(self).invalidate_cache()
         return success
+
+    async def pin_account(self, account_id: str) -> list[str] | None:
+        if self._settings_repo is None:
+            raise RuntimeError("AccountsService pin_account requires settings_repo")
+        existing = await self._repo.get_account(account_id)
+        if existing is None:
+            return None
+        pinned = await self._settings_repo.pinned_account_ids()
+        if account_id not in pinned:
+            pinned = [*pinned, account_id]
+            await self._settings_repo.update(pinned_account_ids=pinned)
+            type(self).invalidate_cache()
+        return await self._settings_repo.pinned_account_ids()
+
+    async def unpin_account(self, account_id: str) -> list[str] | None:
+        if self._settings_repo is None:
+            raise RuntimeError("AccountsService unpin_account requires settings_repo")
+        existing = await self._repo.get_account(account_id)
+        if existing is None:
+            return None
+        pinned = await self._settings_repo.pinned_account_ids()
+        if account_id in pinned:
+            pinned = [entry for entry in pinned if entry != account_id]
+            await self._settings_repo.update(pinned_account_ids=pinned)
+            type(self).invalidate_cache()
+        return await self._settings_repo.pinned_account_ids()

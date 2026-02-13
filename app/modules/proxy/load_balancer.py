@@ -46,6 +46,7 @@ class _Snapshot:
     latest_secondary: dict[str, _UsageSnapshot]
     states: list[AccountState]
     account_map: dict[str, Account]
+    pinned_account_ids: frozenset[str]
     updated_at: float
 
 
@@ -59,6 +60,9 @@ class LoadBalancer:
         self._sticky_lock = asyncio.Lock()
         self._sticky_memory: OrderedDict[str, _StickyEntry] = OrderedDict()
 
+    def invalidate_snapshot(self) -> None:
+        self._snapshot = None
+
     async def select_account(
         self,
         sticky_key: str | None = None,
@@ -68,27 +72,53 @@ class LoadBalancer:
         snapshot = await self._get_snapshot()
         selected_snapshot: Account | None = None
         error_message: str | None = None
+        # If a routing pool is configured (pinned accounts), attempt selection within the pool first.
+        # If the pool yields no eligible accounts (e.g. all paused/deactivated/limited), fall back to
+        # selecting from the full account set.
+        pinned_active = bool(snapshot.pinned_account_ids)
+        pinned_states = (
+            [state for state in snapshot.states if state.account_id in snapshot.pinned_account_ids]
+            if pinned_active
+            else snapshot.states
+        )
 
         settings = get_settings()
         sticky_backend = settings.sticky_sessions_backend
         if sticky_key and sticky_backend == "db":
             async with self._repo_factory() as repos:
                 result = await self._select_with_stickiness(
-                    states=snapshot.states,
+                    states=pinned_states,
                     account_map=snapshot.account_map,
                     sticky_key=sticky_key,
                     reallocate_sticky=reallocate_sticky,
                     sticky_repo=repos.sticky_sessions,
                 )
+                if pinned_active and result.account is None:
+                    result = await self._select_with_stickiness(
+                        states=snapshot.states,
+                        account_map=snapshot.account_map,
+                        sticky_key=sticky_key,
+                        reallocate_sticky=reallocate_sticky,
+                        sticky_repo=repos.sticky_sessions,
+                    )
         elif sticky_key and sticky_backend == "memory":
             result = await self._select_with_memory_stickiness(
-                states=snapshot.states,
+                states=pinned_states,
                 account_map=snapshot.account_map,
                 sticky_key=sticky_key,
                 reallocate_sticky=reallocate_sticky,
             )
+            if pinned_active and result.account is None:
+                result = await self._select_with_memory_stickiness(
+                    states=snapshot.states,
+                    account_map=snapshot.account_map,
+                    sticky_key=sticky_key,
+                    reallocate_sticky=reallocate_sticky,
+                )
         else:
-            result = select_account(snapshot.states)
+            result = select_account(pinned_states)
+            if pinned_active and result.account is None:
+                result = select_account(snapshot.states)
 
         if result.account is None:
             error_message = result.error_message
@@ -134,6 +164,10 @@ class LoadBalancer:
                     runtime=self._runtime,
                 )
                 await self._sync_usage_statuses(repos.accounts, account_map, states)
+                pinned_raw = await repos.settings.pinned_account_ids()
+                pinned_account_ids = frozenset(
+                    account_id for account_id in pinned_raw if account_id in account_map
+                )
                 accounts = [_clone_account(account) for account in accounts_orm]
                 account_map = {account.id: account for account in accounts}
 
@@ -143,6 +177,7 @@ class LoadBalancer:
                 latest_secondary=latest_secondary,
                 states=states,
                 account_map=account_map,
+                pinned_account_ids=pinned_account_ids,
                 updated_at=now,
             )
             self._snapshot = snapshot

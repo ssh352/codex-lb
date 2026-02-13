@@ -60,6 +60,9 @@ class ProxyService:
         self._encryptor = TokenEncryptor()
         self._load_balancer = LoadBalancer(repo_factory)
 
+    def invalidate_routing_snapshot(self) -> None:
+        self._load_balancer.invalidate_snapshot()
+
     def stream_responses(
         self,
         payload: ResponsesRequest,
@@ -85,15 +88,6 @@ class ProxyService:
         _maybe_log_proxy_request_shape("compact", payload, headers)
         filtered = filter_inbound_headers(headers)
         sticky_key = _sticky_key_from_compact_payload(payload)
-        if sticky_key is None:
-            raise ProxyResponseError(
-                400,
-                openai_error(
-                    "missing_prompt_cache_key",
-                    "Missing prompt_cache_key. Stickiness is required on this server.",
-                    error_type="invalid_request_error",
-                ),
-            )
         retryable_codes = {
             "rate_limit_exceeded",
             "usage_limit_reached",

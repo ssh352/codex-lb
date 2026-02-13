@@ -8,11 +8,13 @@ from app.modules.settings.repository import SettingsRepository
 @dataclass(frozen=True, slots=True)
 class DashboardSettingsData:
     prefer_earlier_reset_accounts: bool
+    pinned_account_ids: list[str]
 
 
 @dataclass(frozen=True, slots=True)
 class DashboardSettingsUpdateData:
     prefer_earlier_reset_accounts: bool
+    pinned_account_ids: list[str] | None = None
 
 
 class SettingsService:
@@ -23,12 +25,15 @@ class SettingsService:
         row = await self._repository.get_or_create()
         return DashboardSettingsData(
             prefer_earlier_reset_accounts=row.prefer_earlier_reset_accounts,
+            pinned_account_ids=await self._repository.pinned_account_ids(),
         )
 
     async def update_settings(self, payload: DashboardSettingsUpdateData) -> DashboardSettingsData:
         row = await self._repository.update(
             prefer_earlier_reset_accounts=payload.prefer_earlier_reset_accounts,
+            pinned_account_ids=payload.pinned_account_ids,
         )
         return DashboardSettingsData(
             prefer_earlier_reset_accounts=row.prefer_earlier_reset_accounts,
+            pinned_account_ids=await self._repository.pinned_account_ids(),
         )

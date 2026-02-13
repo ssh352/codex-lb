@@ -17,13 +17,16 @@ def build_account_summaries(
     primary_usage: dict[str, UsageHistory],
     secondary_usage: dict[str, UsageHistory],
     encryptor: TokenEncryptor,
+    pinned_account_ids: set[str] | None = None,
 ) -> list[AccountSummary]:
+    pinned = pinned_account_ids or set()
     return [
         _account_to_summary(
             account,
             primary_usage.get(account.id),
             secondary_usage.get(account.id),
             encryptor,
+            pinned,
         )
         for account in accounts
     ]
@@ -34,6 +37,7 @@ def _account_to_summary(
     primary_usage: UsageHistory | None,
     secondary_usage: UsageHistory | None,
     encryptor: TokenEncryptor,
+    pinned_account_ids: set[str],
 ) -> AccountSummary:
     plan_type = coerce_account_plan_type(account.plan_type, DEFAULT_PLAN)
     auth_status = _build_auth_status(account, encryptor)
@@ -59,6 +63,7 @@ def _account_to_summary(
         display_name=account.email,
         plan_type=plan_type,
         status=account.status.value,
+        pinned=account.id in pinned_account_ids,
         usage=AccountUsage(
             primary_remaining_percent=primary_remaining_percent,
             secondary_remaining_percent=secondary_remaining_percent,

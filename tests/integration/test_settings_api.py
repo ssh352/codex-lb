@@ -11,18 +11,22 @@ async def test_settings_api_get_and_update(async_client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["preferEarlierResetAccounts"] is False
+    assert payload["pinnedAccountIds"] == []
 
     response = await async_client.put(
         "/api/settings",
         json={
             "preferEarlierResetAccounts": True,
+            "pinnedAccountIds": ["acc_one", "acc_two"],
         },
     )
     assert response.status_code == 200
     updated = response.json()
     assert updated["preferEarlierResetAccounts"] is True
+    assert updated["pinnedAccountIds"] == ["acc_one", "acc_two"]
 
     response = await async_client.get("/api/settings")
     assert response.status_code == 200
     payload = response.json()
     assert payload["preferEarlierResetAccounts"] is True
+    assert payload["pinnedAccountIds"] == ["acc_one", "acc_two"]

@@ -9,6 +9,7 @@ from app.modules.accounts.schemas import (
     AccountDeleteResponse,
     AccountImportResponse,
     AccountPauseResponse,
+    AccountPinResponse,
     AccountReactivateResponse,
     AccountsResponse,
 )
@@ -79,3 +80,31 @@ async def delete_account(
             content=dashboard_error("account_not_found", "Account not found"),
         )
     return AccountDeleteResponse(status="deleted")
+
+
+@router.post("/{account_id}/pin", response_model=AccountPinResponse)
+async def pin_account(
+    account_id: str,
+    context: AccountsContext = Depends(get_accounts_context),
+) -> AccountPinResponse | JSONResponse:
+    pinned = await context.service.pin_account(account_id)
+    if pinned is None:
+        return JSONResponse(
+            status_code=404,
+            content=dashboard_error("account_not_found", "Account not found"),
+        )
+    return AccountPinResponse(status="pinned", pinned_account_ids=pinned)
+
+
+@router.post("/{account_id}/unpin", response_model=AccountPinResponse)
+async def unpin_account(
+    account_id: str,
+    context: AccountsContext = Depends(get_accounts_context),
+) -> AccountPinResponse | JSONResponse:
+    pinned = await context.service.unpin_account(account_id)
+    if pinned is None:
+        return JSONResponse(
+            status_code=404,
+            content=dashboard_error("account_not_found", "Account not found"),
+        )
+    return AccountPinResponse(status="unpinned", pinned_account_ids=pinned)

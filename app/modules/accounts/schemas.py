@@ -30,6 +30,7 @@ class AccountSummary(DashboardModel):
     display_name: str
     plan_type: str
     status: str
+    pinned: bool = False
     usage: AccountUsage | None = None
     reset_at_primary: datetime | None = None
     reset_at_secondary: datetime | None = None
@@ -63,3 +64,8 @@ class AccountReactivateResponse(DashboardModel):
 
 class AccountDeleteResponse(DashboardModel):
     status: str
+
+
+class AccountPinResponse(DashboardModel):
+    status: str
+    pinned_account_ids: List[str] = Field(default_factory=list)

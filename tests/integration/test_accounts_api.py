@@ -107,3 +107,53 @@ async def test_delete_missing_account_returns_404(async_client):
     assert response.status_code == 404
     payload = response.json()
     assert payload["error"]["code"] == "account_not_found"
+
+
+@pytest.mark.asyncio
+async def test_pin_and_unpin_account_updates_routing_pool(async_client):
+    email = "pin@example.com"
+    raw_account_id = "acc_pin"
+    payload = {
+        "email": email,
+        "chatgpt_account_id": raw_account_id,
+        "https://api.openai.com/auth": {"chatgpt_plan_type": "plus"},
+    }
+    auth_json = {
+        "tokens": {
+            "idToken": _encode_jwt(payload),
+            "accessToken": "access",
+            "refreshToken": "refresh",
+            "accountId": raw_account_id,
+        },
+    }
+
+    expected_account_id = generate_unique_account_id(raw_account_id, email)
+    files = {"auth_json": ("auth.json", json.dumps(auth_json), "application/json")}
+    response = await async_client.post("/api/accounts/import", files=files)
+    assert response.status_code == 200
+
+    pin = await async_client.post(f"/api/accounts/{expected_account_id}/pin")
+    assert pin.status_code == 200
+    pinned = pin.json()
+    assert pinned["status"] == "pinned"
+    assert pinned["pinnedAccountIds"] == [expected_account_id]
+
+    accounts = await async_client.get("/api/accounts")
+    assert accounts.status_code == 200
+    data = accounts.json()["accounts"]
+    matched = next((account for account in data if account["accountId"] == expected_account_id), None)
+    assert matched is not None
+    assert matched["pinned"] is True
+
+    unpin = await async_client.post(f"/api/accounts/{expected_account_id}/unpin")
+    assert unpin.status_code == 200
+    unpinned = unpin.json()
+    assert unpinned["status"] == "unpinned"
+    assert unpinned["pinnedAccountIds"] == []
+
+    accounts = await async_client.get("/api/accounts")
+    assert accounts.status_code == 200
+    data = accounts.json()["accounts"]
+    matched = next((account for account in data if account["accountId"] == expected_account_id), None)
+    assert matched is not None
+    assert matched["pinned"] is False

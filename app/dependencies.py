@@ -87,7 +87,8 @@ def get_accounts_context(
     repository = AccountsRepository(accounts_session)
     data_repository = AccountsDataRepository(session)
     usage_repository = UsageRepository(session)
-    service = AccountsService(repository, data_repository, usage_repository)
+    settings_repository = SettingsRepository(session)
+    service = AccountsService(repository, data_repository, usage_repository, settings_repository)
     return AccountsContext(
         main_session=session,
         accounts_session=accounts_session,
