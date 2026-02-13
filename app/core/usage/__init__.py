@@ -132,6 +132,9 @@ def summarize_usage_window(
     overall = None
     if total_capacity > 0:
         overall = (total_used / total_capacity) * 100.0
+    # For summary dashboards we intentionally pick the earliest reset timestamp across accounts.
+    # This makes countdown/pacing conservative: if any account resets sooner, the window summary is
+    # treated as resetting sooner (even if other accounts reset later).
     reset_at_value = min(reset_candidates) if reset_candidates else None
     return UsageWindowSummary(
         used_percent=float(overall) if overall is not None else None,

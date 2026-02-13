@@ -72,9 +72,12 @@ class LoadBalancer:
         snapshot = await self._get_snapshot()
         selected_snapshot: Account | None = None
         error_message: str | None = None
-        # If a routing pool is configured (pinned accounts), attempt selection within the pool first.
-        # If the pool yields no eligible accounts (e.g. all paused/deactivated/limited), fall back to
-        # selecting from the full account set.
+        # Routing pool ("pinned accounts") is applied before stickiness:
+        # - When `pinned_account_ids` is non-empty, only pinned accounts are eligible candidates.
+        # - A sticky mapping is only honored if it points to an eligible (pinned) account; otherwise the
+        #   sticky entry is dropped and the key is reassigned on selection.
+        # - If the pinned pool yields no eligible accounts (e.g. all paused/deactivated/limited), routing
+        #   falls back to selecting from the full account set.
         pinned_active = bool(snapshot.pinned_account_ids)
         pinned_states = (
             [state for state in snapshot.states if state.account_id in snapshot.pinned_account_ids]

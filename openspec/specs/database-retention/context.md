@@ -71,3 +71,6 @@ is typically best because it avoids SQLite writes on the proxy request hot path.
 
 If you run multiple workers/processes (or multiple machines) and you need stickiness shared across
 them or to survive restarts, use DB-backed stickiness instead.
+
+If a routing pool is configured (pinned accounts), stickiness is constrained to that pool; sticky mappings to
+unpinned accounts may be dropped and reassigned when the pinned pool is active.

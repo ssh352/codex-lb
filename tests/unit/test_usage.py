@@ -84,3 +84,46 @@ def test_summarize_usage_window_clamps_secondary_window_minutes_to_days():
     )
     summary = summarize_usage_window([row], {account.id: account}, "secondary")
     assert summary.window_minutes == 10080
+
+
+def test_summarize_usage_window_secondary_reset_at_is_earliest_across_accounts():
+    account_a = Account(
+        id="acc_secondary_a",
+        email="a@example.com",
+        plan_type="plus",
+        access_token_encrypted=b"x",
+        refresh_token_encrypted=b"x",
+        id_token_encrypted=b"x",
+        last_refresh=datetime.now(timezone.utc),
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+    account_b = Account(
+        id="acc_secondary_b",
+        email="b@example.com",
+        plan_type="plus",
+        access_token_encrypted=b"x",
+        refresh_token_encrypted=b"x",
+        id_token_encrypted=b"x",
+        last_refresh=datetime.now(timezone.utc),
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+
+    rows = [
+        UsageWindowRow(
+            account_id=account_a.id,
+            used_percent=10.0,
+            reset_at=500,
+            window_minutes=10080,
+        ),
+        UsageWindowRow(
+            account_id=account_b.id,
+            used_percent=10.0,
+            reset_at=1000,
+            window_minutes=10080,
+        ),
+    ]
+
+    summary = summarize_usage_window(rows, {account_a.id: account_a, account_b.id: account_b}, "secondary")
+    assert summary.reset_at == 500
