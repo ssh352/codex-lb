@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 
 from app.core.crypto import TokenEncryptor
-from app.core.utils.time import utcnow
+from app.core.utils.time import to_epoch_seconds_assuming_utc, utcnow
 from app.db.models import Account, AccountStatus
 from app.db.session import AccountsSessionLocal, SessionLocal
 from app.modules.accounts.repository import AccountsRepository
@@ -36,6 +36,7 @@ async def test_dashboard_overview_combines_data(async_client, db_setup):
     now = utcnow().replace(microsecond=0)
     primary_time = now - timedelta(minutes=5)
     secondary_time = now - timedelta(minutes=2)
+    secondary_reset_at = to_epoch_seconds_assuming_utc(now + timedelta(days=3, hours=12))
 
     async with AccountsSessionLocal() as accounts_session:
         accounts_repo = AccountsRepository(accounts_session)
@@ -52,9 +53,11 @@ async def test_dashboard_overview_combines_data(async_client, db_setup):
         )
         await usage_repo.add_entry(
             "acc_dash",
-            40.0,
+            50.0,
             window="secondary",
             recorded_at=secondary_time,
+            reset_at=secondary_reset_at,
+            window_minutes=10080,
         )
         await logs_repo.add_log(
             account_id="acc_dash",
@@ -78,6 +81,11 @@ async def test_dashboard_overview_combines_data(async_client, db_setup):
     assert payload["windows"]["secondary"]["windowKey"] == "secondary"
     assert len(payload["requestLogs"]) == 1
     assert payload["lastSyncAt"] == secondary_time.isoformat() + "Z"
+    assert payload["wastePacing"]["summary"]["accountsEvaluated"] == 1
+    matched = next((entry for entry in payload["wastePacing"]["accounts"] if entry["accountId"] == "acc_dash"), None)
+    assert matched is not None
+    assert matched["onTrack"] is True
+    assert matched["projectedWasteCredits"] == pytest.approx(0.0, abs=0.5)
 
 
 @pytest.mark.asyncio

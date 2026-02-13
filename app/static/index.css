@@ -1390,6 +1390,10 @@ button {
   font-size: 13px;
 }
 
+.text-meta {
+  font-size: 13px;
+}
+
 .summary-list>div {
   display: flex;
   justify-content: space-between;

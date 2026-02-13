@@ -137,6 +137,7 @@
                     <span class="text-muted" x-text="card.remainingText"></span>
                   </div>
                   <div class="text-muted" x-text="card.meta"></div>
+                  <div class="text-meta" :class="card.pacingClass" x-text="card.pacingText"></div>
                   <div class="account-actions">
                     <template x-for="action in card.actions" :key="action.label">
                       <button x-text="action.label" @click="handleAccountAction(action, card)"></button>

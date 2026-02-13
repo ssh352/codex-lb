@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 
 from app.core.clients.http import close_http_client, init_http_client
 from app.core.handlers import add_exception_handlers
@@ -25,6 +26,13 @@ from app.modules.proxy import api as proxy_api
 from app.modules.request_logs import api as request_logs_api
 from app.modules.settings import api as settings_api
 from app.modules.usage import api as usage_api
+
+
+class DashboardStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 @asynccontextmanager
@@ -81,7 +89,7 @@ def create_app() -> FastAPI:
     async def spa_settings():
         return FileResponse(index_html, media_type="text/html")
 
-    app.mount("/dashboard", StaticFiles(directory=static_dir, html=True), name="dashboard")
+    app.mount("/dashboard", DashboardStaticFiles(directory=static_dir, html=True), name="dashboard")
 
     return app
 

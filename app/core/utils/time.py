@@ -20,3 +20,9 @@ def from_epoch_seconds(value: int | float | None) -> datetime | None:
     if value is None:
         return None
     return datetime.fromtimestamp(value, tz=timezone.utc)
+
+
+def to_epoch_seconds_assuming_utc(value: datetime) -> int:
+    if value.tzinfo is None:
+        return int(value.replace(tzinfo=timezone.utc).timestamp())
+    return int(value.astimezone(timezone.utc).timestamp())
