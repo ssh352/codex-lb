@@ -210,6 +210,10 @@ class LoadBalancer:
             if pinned is None:
                 await sticky_repo.delete(sticky_key)
             else:
+                # Stickiness is honored as long as the pinned account remains eligible.
+                # Note: we do not proactively reassign on secondary reset boundaries; reassignment
+                # typically happens on retry (explicit reallocation) or when the pinned account
+                # becomes unavailable.
                 pinned_result = select_account([pinned])
                 if pinned_result.account is not None:
                     return pinned_result
@@ -239,6 +243,10 @@ class LoadBalancer:
             if pinned is None:
                 await self._sticky_delete(sticky_key)
             else:
+                # Stickiness is honored as long as the pinned account remains eligible.
+                # Note: we do not proactively reassign on secondary reset boundaries; reassignment
+                # typically happens on retry (explicit reallocation) or when the pinned account
+                # becomes unavailable.
                 pinned_result = select_account([pinned])
                 if pinned_result.account is not None:
                     return pinned_result

@@ -1,13 +1,13 @@
-## Dashboard Usage: Quota Reset & Pace (Context)
+## Dashboard Usage: Quota Reset (Context)
 
 ### What “Reset in 2d” means
 
-The dashboard shows a “Quota pace (7D)” tile that includes a “Reset in …” label. This label is
-based on the **secondary (7d) usage window** reset timestamp (`resetAt`).
+Some dashboard views show a “Reset in …” label for quota resets. This label is based on the
+**secondary (7d) usage window** reset timestamp (`resetAt` / `reset_at_secondary`).
 
 Important nuance: the backend derives the secondary summary reset timestamp as the **earliest
-reset time across all accounts** that have a known secondary reset. This makes the countdown and
-pace target conservative.
+reset time across all accounts** that have a known secondary reset. This makes any summary
+countdown conservative.
 
 So “Reset in 2d” means:
 
@@ -17,9 +17,9 @@ So “Reset in 2d” means:
 
 ### Rounding behavior
 
-The dashboard displays “in Xm / in Xh / in Xd” using a ceiling rounding strategy. For example,
-“in 2d” can mean between a bit over 1 day and up to 2 days remaining, depending on the exact
-timestamp.
+The dashboard displays “in Xm / in Xh / in Xd” (or “in Xd Yh” once the remaining time exceeds
+24 hours) using a ceiling rounding strategy. For example, “in 2d” can mean between a bit over
+1 day and up to 2 days remaining, depending on the exact timestamp.
 
 ### Example
 
@@ -28,6 +28,5 @@ If you have two accounts with secondary reset times:
 - Account A resets in 2 days
 - Account B resets in 5 days
 
-Then the “Quota pace (7D)” tile will show “Reset in 2d”, while the account list/cards will show
+Then any summary “Reset in …” label will show “Reset in 2d”, while account list/cards will show
 each account’s own reset.
-

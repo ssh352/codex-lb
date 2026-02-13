@@ -9,6 +9,7 @@ from typing import Protocol
 import zstandard as zstd
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.datastructures import Headers
 
 from app.core.config.settings import get_settings
 from app.core.errors import dashboard_error
@@ -110,7 +111,7 @@ def _replace_request_body(request: Request, body: bytes) -> None:
     headers.append((b"content-length", str(len(body)).encode("ascii")))
     request.scope["headers"] = headers
     # Ensure subsequent request.headers reflects the updated scope headers.
-    request._headers = None
+    request._headers = Headers(raw=headers)
 
 
 def add_request_decompression_middleware(app: FastAPI) -> None:

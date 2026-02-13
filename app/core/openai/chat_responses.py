@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -255,7 +256,7 @@ def iter_chat_chunks(
                 if isinstance(maybe_error, dict):
                     error = maybe_error
             if error is not None:
-                error_payload = {"error": error}
+                error_payload: dict[str, JsonValue] = {"error": cast(JsonValue, error)}
                 yield _dump_sse(error_payload)
                 yield "data: [DONE]\n\n"
                 return

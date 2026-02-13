@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Callable, cast
 
 import openai
+from openai.types.chat import ChatCompletionMessageParam
 
 BASE_URL = os.environ.get("CODEX_BASE_URL", "http://localhost:2455/v1")
 API_KEY = os.environ.get("CODEX_API_KEY", "sk-local")
@@ -451,32 +452,43 @@ def main() -> int:
             return {"id": getattr(resp, "id", None), "content": resp.choices[0].message.content}
 
         def c_audio_input() -> dict[str, Any]:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[
+            messages: list[ChatCompletionMessageParam] = [
+                cast(
+                    ChatCompletionMessageParam,
                     {
                         "role": "user",
                         "content": [
                             {"type": "text", "text": "Transcribe the audio."},
-                            {"type": "input_audio", "input_audio": {"data": audio_b64, "format": AUDIO_FORMAT}},
+                            {
+                                "type": "input_audio",
+                                "input_audio": {"data": audio_b64, "format": AUDIO_FORMAT},
+                            },
                         ],
-                    }
-                ],
+                    },
+                )
+            ]
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
             )
             return {"id": getattr(resp, "id", None), "content": resp.choices[0].message.content}
 
         def c_file_input() -> dict[str, Any]:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[
+            messages: list[ChatCompletionMessageParam] = [
+                cast(
+                    ChatCompletionMessageParam,
                     {
                         "role": "user",
                         "content": [
                             {"type": "text", "text": "Summarize the file."},
                             {"type": "file", "file": {"file_url": FILE_URL}},
                         ],
-                    }
-                ],
+                    },
+                )
+            ]
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
             )
             return {"id": getattr(resp, "id", None), "content": resp.choices[0].message.content}
 

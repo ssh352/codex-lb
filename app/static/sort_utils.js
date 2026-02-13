@@ -73,6 +73,14 @@
 
 		const key = String(sortKey || "email");
 		const direction = String(sortDirection || "asc") === "desc" ? -1 : 1;
+		const isQuotaExceeded = (account) => {
+			const status = String(account?.status ?? "").trim().toLowerCase();
+			if (status === "exceeded" || status === "quota_exceeded") {
+				return true;
+			}
+			const remaining = toNumber(account?.usage?.secondaryRemainingPercent);
+			return remaining !== null && remaining <= 0;
+		};
 
 		const compareKey = (a, b, k, dir = 1) => {
 			const av = accountValueForKey(a, k);
@@ -81,6 +89,19 @@
 		};
 
 		return list.sort((a, b) => {
+			const aExceeded = isQuotaExceeded(a);
+			const bExceeded = isQuotaExceeded(b);
+			if (aExceeded !== bExceeded) {
+				return aExceeded ? 1 : -1;
+			}
+			if (aExceeded && bExceeded) {
+				const exceededDir = key === "quotaResetSecondary" ? direction : 1;
+				const byReset = compareKey(a, b, "quotaResetSecondary", exceededDir);
+				if (byReset !== 0) {
+					return byReset;
+				}
+			}
+
 			const primary = compareKey(a, b, key, direction);
 			if (primary !== 0) {
 				return primary;

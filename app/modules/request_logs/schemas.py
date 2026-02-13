@@ -8,6 +8,7 @@ from app.modules.shared.schemas import DashboardModel
 
 
 class RequestLogEntry(DashboardModel):
+    # Stored internally as UTC-naive; serialized as ISO 8601 with a trailing "Z" (see DashboardModel).
     requested_at: datetime
     account_id: str
     request_id: str

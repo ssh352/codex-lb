@@ -316,6 +316,46 @@ async def test_usage_updater_persists_primary_and_secondary_usage(monkeypatch) -
 
 
 @pytest.mark.asyncio
+async def test_usage_updater_reclassifies_primary_as_secondary_for_day_windows(monkeypatch) -> None:
+    monkeypatch.setenv("CODEX_LB_USAGE_REFRESH_ENABLED", "true")
+    from app.core.config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    async def stub_fetch_usage(**_: Any) -> UsagePayload:
+        return UsagePayload.model_validate(
+            {
+                "rate_limit": {
+                    "primary_window": {
+                        "used_percent": 100.0,
+                        "reset_at": 1735689600,
+                        "limit_window_seconds": 10080 * 60,
+                    }
+                },
+                "credits": {"has_credits": True, "unlimited": False, "balance": "12.0"},
+            }
+        )
+
+    monkeypatch.setattr("app.modules.usage.updater.fetch_usage", stub_fetch_usage)
+
+    usage_repo = StubUsageRepository()
+    updater = UsageUpdater(usage_repo, accounts_repo=None)
+    acc = _make_account("acc_free_like", "workspace_free_like", email="free@example.com")
+
+    await updater.refresh_accounts([acc], latest_usage={})
+
+    assert len(usage_repo.entries) == 1
+    entry = usage_repo.entries[0]
+    assert entry.window == "secondary"
+    assert entry.used_percent == 100.0
+    assert entry.reset_at == 1735689600
+    assert entry.window_minutes == 10080
+    assert entry.credits_has is True
+    assert entry.credits_unlimited is False
+    assert entry.credits_balance == 12.0
+
+
+@pytest.mark.asyncio
 async def test_usage_updater_computes_reset_at_from_reset_after_seconds(monkeypatch) -> None:
     monkeypatch.setenv("CODEX_LB_USAGE_REFRESH_ENABLED", "true")
     from app.core.config.settings import get_settings

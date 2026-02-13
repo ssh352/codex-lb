@@ -108,6 +108,27 @@ async def test_usage_repository_latest_by_account_returns_latest_per_account(db_
 
 
 @pytest.mark.asyncio
+async def test_usage_repository_effective_window_reclassifies_primary_day_windows(db_setup):
+    async with SessionLocal() as session:
+        repo = UsageRepository(session)
+        now = utcnow()
+
+        await repo.add_entry(
+            "acc1",
+            10.0,
+            recorded_at=now - timedelta(minutes=1),
+            window="primary",
+            window_minutes=10080,
+        )
+
+        latest_primary = await repo.latest_by_account(window="primary")
+        latest_secondary = await repo.latest_by_account(window="secondary")
+        assert "acc1" not in latest_primary
+        assert "acc1" in latest_secondary
+        assert latest_secondary["acc1"].window_minutes == 10080
+
+
+@pytest.mark.asyncio
 async def test_usage_repository_latest_primary_secondary_by_account(db_setup):
     async with AccountsSessionLocal() as accounts_session:
         accounts_repo = AccountsRepository(accounts_session)

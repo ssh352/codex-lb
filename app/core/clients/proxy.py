@@ -6,14 +6,20 @@ import ipaddress
 import json
 import socket
 from dataclasses import dataclass
-from typing import AsyncContextManager, AsyncIterator, Awaitable, Mapping, Protocol, TypeAlias, cast
+from typing import AsyncContextManager, AsyncIterator, Mapping, Protocol, TypeAlias, cast
 from urllib.parse import ParseResult, urlparse, urlunparse
 
 import aiohttp
 
 from app.core.clients.http import get_http_client
 from app.core.config.settings import get_settings
-from app.core.errors import OpenAIErrorEnvelope, ResponseFailedEvent, openai_error, response_failed_event
+from app.core.errors import (
+    OpenAIErrorDetail,
+    OpenAIErrorEnvelope,
+    ResponseFailedEvent,
+    openai_error,
+    response_failed_event,
+)
 from app.core.openai.models import OpenAIResponsePayload
 from app.core.openai.parsing import parse_error_payload, parse_response_payload, parse_sse_event
 from app.core.openai.requests import ResponsesCompactRequest, ResponsesRequest
@@ -67,13 +73,7 @@ ErrorResponse: TypeAlias = aiohttp.ClientResponse | ErrorResponseProtocol
 
 
 class SSEContentProtocol(Protocol):
-    def iter_chunked(self, size: int) -> "SSEChunkIteratorProtocol": ...
-
-
-class SSEChunkIteratorProtocol(Protocol):
-    def __aiter__(self) -> "SSEChunkIteratorProtocol": ...
-
-    def __anext__(self) -> Awaitable[bytes]: ...
+    def iter_chunked(self, size: int) -> AsyncIterator[bytes]: ...
 
 
 class SSEResponseProtocol(Protocol):
@@ -235,7 +235,22 @@ async def _error_payload_from_response(resp: ErrorResponse) -> OpenAIErrorEnvelo
     if isinstance(data, dict):
         error = parse_error_payload(data)
         if error:
-            return {"error": error.model_dump(exclude_none=True)}
+            message = error.message or fallback_message
+            error_type = error.type or "server_error"
+            detail: OpenAIErrorDetail = {
+                "message": message,
+                "type": error_type,
+                "code": _normalize_error_code(error.code, error.type),
+            }
+            if error.param:
+                detail["param"] = error.param
+            if error.plan_type:
+                detail["plan_type"] = error.plan_type
+            if error.resets_at is not None:
+                detail["resets_at"] = error.resets_at
+            if error.resets_in_seconds is not None:
+                detail["resets_in_seconds"] = error.resets_in_seconds
+            return {"error": detail}
         message = _extract_upstream_message(data)
         if message:
             return openai_error("upstream_error", message)
@@ -683,10 +698,11 @@ async def compact_responses(
         account_id,
         accept="application/json",
     )
+    timeout_seconds = settings.upstream_compact_timeout_seconds
     timeout = aiohttp.ClientTimeout(
-        total=60,
+        total=timeout_seconds,
         sock_connect=settings.upstream_connect_timeout_seconds,
-        sock_read=60,
+        sock_read=timeout_seconds,
     )
 
     client_session = session or get_http_client().session

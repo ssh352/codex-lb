@@ -164,30 +164,33 @@ class UsageUpdater:
         credits_has, credits_unlimited, credits_balance = _credits_snapshot(payload)
         now_epoch = _now_epoch()
 
-        if primary and primary.used_percent is not None:
+        recorded: set[str] = set()
+        candidates = (("primary", primary), ("secondary", secondary))
+        for default_window, window_payload in candidates:
+            if window_payload is None or window_payload.used_percent is None:
+                continue
+            window_minutes = _window_minutes(window_payload.limit_window_seconds)
+            effective_window = default_window
+            if window_minutes is not None and window_minutes >= (24 * 60):
+                effective_window = "secondary"
+            if effective_window in recorded:
+                continue
+            recorded.add(effective_window)
             await self._usage_repo.add_entry(
                 account_id=account.id,
-                used_percent=float(primary.used_percent),
+                used_percent=float(window_payload.used_percent),
                 input_tokens=None,
                 output_tokens=None,
-                window="primary",
-                reset_at=_reset_at(primary.reset_at, primary.reset_after_seconds, now_epoch),
-                window_minutes=_window_minutes(primary.limit_window_seconds),
-                credits_has=credits_has,
-                credits_unlimited=credits_unlimited,
-                credits_balance=credits_balance,
-                commit=False,
-            )
-
-        if secondary and secondary.used_percent is not None:
-            await self._usage_repo.add_entry(
-                account_id=account.id,
-                used_percent=float(secondary.used_percent),
-                input_tokens=None,
-                output_tokens=None,
-                window="secondary",
-                reset_at=_reset_at(secondary.reset_at, secondary.reset_after_seconds, now_epoch),
-                window_minutes=_window_minutes(secondary.limit_window_seconds),
+                window=effective_window,
+                reset_at=_reset_at(
+                    window_payload.reset_at,
+                    window_payload.reset_after_seconds,
+                    now_epoch,
+                ),
+                window_minutes=window_minutes,
+                credits_has=credits_has if default_window == "primary" else None,
+                credits_unlimited=credits_unlimited if default_window == "primary" else None,
+                credits_balance=credits_balance if default_window == "primary" else None,
                 commit=False,
             )
 

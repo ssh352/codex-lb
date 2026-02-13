@@ -476,55 +476,59 @@
               </div>
             </div>
 
-            <div class="panel">
-              <h3>Selected account</h3>
-              <div class="summary-list">
-                <div><span>Email</span><strong x-text="selectedAccount.email" :title="selectedAccount.email"></strong>
-                </div>
-                <div><span>Account ID</span><strong x-text="selectedAccount.id" :title="selectedAccount.id"></strong>
-                </div>
-                <div><span>Plan</span><strong x-text="planLabel(selectedAccount.plan)"></strong></div>
-                <div>
-                  <span>Status</span>
-                  <span class="status-pill" :class="selectedAccount.status"
-                    x-text="statusLabel(selectedAccount.status)"></span>
-                </div>
-                <div><span
-                    x-text="`Quota reset (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></span><strong
-                    x-text="formatQuotaResetLabel(selectedAccount.resetAtPrimary)"></strong></div>
-                <div><span
-                    x-text="`Quota reset (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`"></span><strong
-                    x-text="formatQuotaResetLabel(selectedAccount.resetAtSecondary)"></strong></div>
-              </div>
+	            <div class="panel">
+	              <h3>Selected account</h3>
+	              <div class="summary-list">
+	                <div><span>Email</span><strong x-text="selectedAccount.email" :title="selectedAccount.email"></strong>
+	                </div>
+	                <div><span>Account ID</span><strong x-text="selectedAccount.id" :title="selectedAccount.id"></strong>
+	                </div>
+	                <div><span>Plan</span><strong x-text="planLabel(selectedAccount.plan)"></strong></div>
+	                <div>
+	                  <span>Status</span>
+	                  <span class="status-pill" :class="selectedAccount.status"
+	                    x-text="statusLabel(selectedAccount.status)"></span>
+	                </div>
+	                <template x-if="selectedAccount.plan !== 'free'">
+	                  <div><span
+	                      x-text="`Rate limit reset (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></span><strong
+	                      x-text="formatQuotaResetLabel(selectedAccount.resetAtPrimary)"></strong></div>
+	                </template>
+	                <div><span
+	                    x-text="`Quota reset (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`"></span><strong
+	                    x-text="formatQuotaResetLabel(selectedAccount.resetAtSecondary)"></strong></div>
+	              </div>
 
-              <div class="split-stack" style="margin-top: 12px">
-                <div class="progress-row">
-                  <label
-                    x-text="`Remaining (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></label>
-                  <div role="progressbar" aria-valuemin="0" aria-valuemax="100"
-                    :class="calculateProgressClass(selectedAccount.status, selectedAccount.usage?.primaryRemainingPercent)"
-                    :aria-valuenow="formatPercentValue(selectedAccount.usage?.primaryRemainingPercent)">
-                    <div :style="{ width: `${formatPercentValue(selectedAccount.usage?.primaryRemainingPercent)}%` }">
-                    </div>
-                  </div>
-                  <span
-                    :class="calculateTextUsageTextClass(selectedAccount.status, selectedAccount.usage?.primaryRemainingPercent)"
-                    x-text="formatPercent(selectedAccount.usage?.primaryRemainingPercent)"></span>
-                </div>
-                <div class="progress-row">
-                  <label
-                    x-text="`Remaining (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`"></label>
-                  <div role="progressbar" aria-valuemin="0" aria-valuemax="100"
-                    :class="calculateProgressClass(selectedAccount.status, selectedAccount.usage?.secondaryRemainingPercent)"
-                    :aria-valuenow="formatPercentValue(selectedAccount.usage?.secondaryRemainingPercent)">
-                    <div :style="{ width: `${formatPercentValue(selectedAccount.usage?.secondaryRemainingPercent)}%` }">
-                    </div>
-                  </div>
-                  <span
-                    :class="calculateTextUsageTextClass(selectedAccount.status, selectedAccount.usage?.secondaryRemainingPercent)"
-                    x-text="formatPercent(selectedAccount.usage?.secondaryRemainingPercent)"></span>
-                </div>
-              </div>
+	              <div class="split-stack" style="margin-top: 12px">
+	                <template x-if="selectedAccount.plan !== 'free'">
+	                  <div class="progress-row">
+	                    <label
+	                      x-text="`Remaining (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></label>
+	                    <div role="progressbar" aria-valuemin="0" aria-valuemax="100"
+	                      :class="calculateProgressClass(selectedAccount.status, selectedAccount.usage?.primaryRemainingPercent)"
+	                      :aria-valuenow="formatPercentValue(selectedAccount.usage?.primaryRemainingPercent)">
+	                      <div :style="{ width: `${formatPercentValue(selectedAccount.usage?.primaryRemainingPercent)}%` }">
+	                      </div>
+	                    </div>
+	                    <span
+	                      :class="calculateTextUsageTextClass(selectedAccount.status, selectedAccount.usage?.primaryRemainingPercent)"
+	                      x-text="formatPercent(selectedAccount.usage?.primaryRemainingPercent)"></span>
+	                  </div>
+	                </template>
+	                <div class="progress-row">
+	                  <label
+	                    x-text="`Remaining (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`"></label>
+	                  <div role="progressbar" aria-valuemin="0" aria-valuemax="100"
+	                    :class="calculateProgressClass(selectedAccount.status, selectedAccount.usage?.secondaryRemainingPercent)"
+	                    :aria-valuenow="formatPercentValue(selectedAccount.usage?.secondaryRemainingPercent)">
+	                    <div :style="{ width: `${formatPercentValue(selectedAccount.usage?.secondaryRemainingPercent)}%` }">
+	                    </div>
+	                  </div>
+	                  <span
+	                    :class="calculateTextUsageTextClass(selectedAccount.status, selectedAccount.usage?.secondaryRemainingPercent)"
+	                    x-text="formatPercent(selectedAccount.usage?.secondaryRemainingPercent)"></span>
+	                </div>
+	              </div>
 
               <fieldset class="token-fieldset">
                 <legend>Tokens</legend>
@@ -577,24 +581,11 @@
                   x-model.number="autoRefresh.intervalSeconds" style="width: 90px">
                 seconds.
               </div>
-            </fieldset>
+	            </fieldset>
 
-            <fieldset class="settings-fieldset">
-              <legend>Daily work pace</legend>
-              <label for="dashboard-work-hours-per-day">Work hours per day you can actively drive usage:</label>
-              <div style="margin-top: 6px">
-                <input id="dashboard-work-hours-per-day" type="number" min="0.1" max="24" step="0.25"
-                  x-model.number="work.workHoursPerDay" style="width: 90px">
-                <span class="text-muted">Used to compute “credits/min” targets so you can finish quota before the 7d reset.</span>
-              </div>
-              <div class="text-muted" style="margin-top: 6px">
-                Saved locally in your browser (no server update).
-              </div>
-            </fieldset>
-
-            <div class="inline-actions" style="margin-top: 12px">
-              <button type="button" @click="saveSettings" :disabled="settings.isLoading || settings.isSaving || !settings.hasLoaded">
-                <span>Save</span>
+	            <div class="inline-actions" style="margin-top: 12px">
+	              <button type="button" @click="saveSettings" :disabled="settings.isLoading || settings.isSaving || !settings.hasLoaded">
+	                <span>Save</span>
               </button>
             </div>
           </div>

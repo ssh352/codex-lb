@@ -63,6 +63,19 @@ Non-streaming request/response:
 - Pre-release: run unit/integration tests and optional OpenAI client compatibility tests.
 - Smoke tests: stream a response, validate non-stream responses, and verify error envelopes.
 - Post-deploy: monitor `no_accounts`, `stream_incomplete`, and `upstream_unavailable`.
+- If you see `502` with `upstream_unavailable` and a message like `Timeout on reading data from socket` on `/responses/compact`, increase the upstream compact timeout:
+  - `CODEX_LB_UPSTREAM_COMPACT_TIMEOUT_SECONDS` (default `300`)
+- Read-timeout on `/responses/compact` means: the proxy connected and sent the request upstream, but did not
+  receive response bytes within the configured socket read timeout. This can be normal for slow non-streaming
+  upstream work (the upstream may not send any bytes until it finishes).
+- Where `502` comes from: `aiohttp` socket read timeouts are raised as `aiohttp.ClientError`, mapped to
+  an OpenAI error envelope with HTTP 502 (`upstream_unavailable`) in `app/core/clients/proxy.py`, then returned
+  by the FastAPI handler in `app/modules/proxy/api.py`.
+- Tradeoffs: increasing the compact timeout reduces spurious 502s for slow upstream requests, but also keeps
+  in-flight requests open longer (more sockets/memory), which can worsen overload behavior under concurrency.
+  If timeouts happen only under load, also consider tuning client limits:
+  - `CODEX_LB_HTTP_CLIENT_CONNECTOR_LIMIT`
+  - `CODEX_LB_HTTP_CLIENT_CONNECTOR_LIMIT_PER_HOST`
 - To debug client routing/stickiness metadata, enable proxy logging:
   - `CODEX_LB_LOG_PROXY_REQUEST_SHAPE=1` (includes a hashed `prompt_cache_key`)
   - `CODEX_LB_LOG_PROXY_REQUEST_SHAPE_RAW_CACHE_KEY=1` (adds a truncated raw `prompt_cache_key`; use with care)

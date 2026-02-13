@@ -54,6 +54,7 @@ dev = [
     "ruff>=0.14.13",
     "ty>=0.0.12",
     "openai>=2.16.0",
+    "pyright>=1.1.408",
 ]
 
 [tool.pytest.ini_options]

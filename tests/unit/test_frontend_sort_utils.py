@@ -56,3 +56,56 @@ process.stdout.write(JSON.stringify(sorted.map(a => a.id)));
     # earliest reset first: c (2025-12-31), then a/b (2026-01-01),
     # tie breaks by remaining asc: b (5) then a (10)
     assert payload == ["c", "b", "a"]
+
+
+def test_sort_utils_quota_exceeded_goes_to_bottom_sorted_by_reset() -> None:
+    proc = _run_node(
+        """
+const { sortAccounts } = require('./app/static/sort_utils.js');
+const accounts = [
+  {
+    id: 'active-1',
+    email: 'b@example.com',
+    status: 'active',
+    usage: { secondaryRemainingPercent: 50 },
+    resetAtSecondary: '2026-01-03T00:00:00Z',
+  },
+  {
+    id: 'exceeded-later',
+    email: 'a@example.com',
+    status: 'quota_exceeded',
+    usage: { secondaryRemainingPercent: 0 },
+    resetAtSecondary: '2026-01-05T00:00:00Z',
+  },
+  {
+    id: 'active-2',
+    email: 'd@example.com',
+    status: 'active',
+    usage: { secondaryRemainingPercent: 25 },
+    resetAtSecondary: '2026-01-04T00:00:00Z',
+  },
+  // Some payloads may not mark quota exceeded explicitly but have 0% remaining.
+  {
+    id: 'implicit-exceeded',
+    email: 'e@example.com',
+    status: 'active',
+    usage: { secondaryRemainingPercent: 0 },
+    resetAtSecondary: '2026-01-02T00:00:00Z',
+  },
+  {
+    id: 'exceeded-sooner',
+    email: 'c@example.com',
+    status: 'quota_exceeded',
+    usage: { secondaryRemainingPercent: 0 },
+    resetAtSecondary: '2026-01-01T00:00:00Z',
+  },
+];
+const sorted = sortAccounts(accounts, { sortKey: 'email', sortDirection: 'asc' });
+process.stdout.write(JSON.stringify(sorted.map(a => a.id)));
+""".strip()
+    )
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    # Non-exceeded accounts come first (sorted by email), then quota exceeded accounts
+    # sorted by quota reset (earlier reset first).
+    assert payload == ["active-1", "active-2", "exceeded-sooner", "implicit-exceeded", "exceeded-later"]

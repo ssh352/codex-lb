@@ -107,6 +107,15 @@ def select_account(
         last_selected = state.last_selected_at or 0.0
         return secondary_used, primary_used, last_selected, state.account_id
 
+    # Waste-pressure selection:
+    # Prefer accounts whose unused secondary credits are most likely to be wasted soon
+    # (secondary_remaining / time_to_secondary_reset), while down-weighting accounts that are likely
+    # to fail due to low primary headroom or recent errors.
+    #
+    # Rationale (important with stickiness): a "earliest reset first" strategy is deadline-only and
+    # can pin long-lived sticky traffic to an account that resets soon; once it resets, it remains
+    # eligible and keeps serving that sticky key, while other accounts' secondary windows expire
+    # unused because we don't proactively migrate stickiness on reset events.
     def _waste_pressure_sort_key(state: AccountState) -> tuple[float, float, float, float, str]:
         primary_used = float(state.used_percent or 0.0)
         secondary_capacity = float(state.secondary_capacity_credits or 0.0)

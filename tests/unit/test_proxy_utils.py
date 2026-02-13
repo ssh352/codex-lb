@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 
 import pytest
 
@@ -115,12 +116,17 @@ class _DummyContent:
     def __init__(self, chunks: list[bytes]) -> None:
         self._chunks = chunks
 
-    async def iter_chunked(self, size: int):
-        for chunk in self._chunks:
-            yield chunk
+    def iter_chunked(self, size: int) -> AsyncIterator[bytes]:
+        async def _gen() -> AsyncIterator[bytes]:
+            for chunk in self._chunks:
+                yield chunk
+
+        return _gen()
 
 
 class _DummyResponse:
+    content: proxy_module.SSEContentProtocol
+
     def __init__(self, chunks: list[bytes]) -> None:
         self.content = _DummyContent(chunks)
 

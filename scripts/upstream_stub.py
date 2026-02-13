@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import time
+from collections.abc import AsyncIterator
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -36,7 +37,7 @@ def create_app() -> FastAPI:
         def _sse(data: dict) -> bytes:
             return ("data: " + json.dumps(data, separators=(",", ":")) + "\n\n").encode("utf-8")
 
-        async def _iter() -> asyncio.AsyncIterator[bytes]:
+        async def _iter() -> AsyncIterator[bytes]:
             start = time.monotonic()
             yield _sse({"type": "response.created", "response": {"id": "stub_response", "status": "in_progress"}})
 

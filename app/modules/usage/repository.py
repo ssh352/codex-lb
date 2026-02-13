@@ -2,13 +2,29 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.usage.types import UsageAggregateRow
 from app.core.utils.time import utcnow
 from app.db.models import UsageHistory
 from app.modules.proxy.rate_limit_cache import invalidate_rate_limit_headers_cache
+
+_SECONDARY_WINDOW_THRESHOLD_MINUTES = 24 * 60
+
+
+def _effective_window_key_expr():
+    raw = func.coalesce(UsageHistory.window, "primary")
+    return case(
+        (
+            and_(
+                raw == "primary",
+                UsageHistory.window_minutes >= _SECONDARY_WINDOW_THRESHOLD_MINUTES,
+            ),
+            "secondary",
+        ),
+        else_=raw,
+    )
 
 
 class UsageRepository:
@@ -65,10 +81,8 @@ class UsageRepository:
     ) -> list[UsageAggregateRow]:
         conditions = [UsageHistory.recorded_at >= since]
         if window:
-            if window == "primary":
-                conditions.append(or_(UsageHistory.window == "primary", UsageHistory.window.is_(None)))
-            else:
-                conditions.append(UsageHistory.window == window)
+            effective_window = _effective_window_key_expr()
+            conditions.append(effective_window == window)
         stmt = (
             select(
                 UsageHistory.account_id,
@@ -100,10 +114,11 @@ class UsageRepository:
         ]
 
     async def latest_by_account(self, window: str | None = None) -> dict[str, UsageHistory]:
-        if window and window != "primary":
-            conditions = UsageHistory.window == window
+        effective_window = _effective_window_key_expr()
+        if window is None or window == "primary":
+            conditions = effective_window == "primary"
         else:
-            conditions = or_(UsageHistory.window == "primary", UsageHistory.window.is_(None))
+            conditions = effective_window == window
 
         ranked = (
             select(
@@ -133,7 +148,7 @@ class UsageRepository:
         self,
     ) -> tuple[dict[str, UsageHistory], dict[str, UsageHistory]]:
         # Treat window=NULL as primary for historical compatibility.
-        window_key = func.coalesce(UsageHistory.window, "primary")
+        window_key = _effective_window_key_expr()
 
         ranked = (
             select(
@@ -169,10 +184,8 @@ class UsageRepository:
         return primary, secondary
 
     async def latest_window_minutes(self, window: str) -> int | None:
-        if window == "primary":
-            conditions = or_(UsageHistory.window == "primary", UsageHistory.window.is_(None))
-        else:
-            conditions = UsageHistory.window == window
+        effective_window = _effective_window_key_expr()
+        conditions = effective_window == window
         result = await self._session.execute(select(func.max(UsageHistory.window_minutes)).where(conditions))
         value = result.scalar_one_or_none()
         return int(value) if value is not None else None

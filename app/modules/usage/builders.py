@@ -189,9 +189,9 @@ def _cost_summary_to_model(cost: UsageCostSummary) -> UsageCost:
 
 def _metrics_summary_to_model(metrics: UsageMetricsSummary) -> UsageMetrics:
     return UsageMetrics(
-        requests_7d=metrics.requests_7d,
+        requests7d=metrics.requests_7d,
         tokens_secondary_window=metrics.tokens_secondary_window,
         cached_tokens_secondary_window=metrics.cached_tokens_secondary_window,
-        error_rate_7d=metrics.error_rate_7d,
+        errorRate7d=metrics.error_rate_7d,
         top_error=metrics.top_error,
     )

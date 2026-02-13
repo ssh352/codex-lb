@@ -19,15 +19,10 @@
 		settings: "/api/settings",
 	};
 
-	const AUTO_REFRESH_STORAGE_KEY = "codex_lb_dashboard_auto_refresh_v1";
-	const AUTO_REFRESH_DEFAULT_SECONDS = 30;
-	const AUTO_REFRESH_MIN_SECONDS = 10;
-	const AUTO_REFRESH_MAX_SECONDS = 600;
-
-	const WORK_HOURS_PER_DAY_STORAGE_KEY = "codex_lb_work_hours_per_day_v1";
-	const WORK_HOURS_PER_DAY_DEFAULT = 1.0;
-	const WORK_HOURS_PER_DAY_MIN = 0.1;
-	const WORK_HOURS_PER_DAY_MAX = 24;
+		const AUTO_REFRESH_STORAGE_KEY = "codex_lb_dashboard_auto_refresh_v1";
+		const AUTO_REFRESH_DEFAULT_SECONDS = 30;
+		const AUTO_REFRESH_MIN_SECONDS = 10;
+		const AUTO_REFRESH_MAX_SECONDS = 600;
 
 	const normalizeAutoRefreshIntervalSeconds = (value) => {
 		const seconds = Math.round(Number(value));
@@ -64,10 +59,10 @@
 		}
 	};
 
-	const saveAutoRefreshPreferences = (preferences) => {
-		try {
-			localStorage.setItem(
-				AUTO_REFRESH_STORAGE_KEY,
+		const saveAutoRefreshPreferences = (preferences) => {
+			try {
+				localStorage.setItem(
+					AUTO_REFRESH_STORAGE_KEY,
 				JSON.stringify({
 					enabled: Boolean(preferences?.enabled),
 					intervalSeconds: normalizeAutoRefreshIntervalSeconds(
@@ -77,43 +72,8 @@
 			);
 		} catch {
 			// ignore storage errors (private mode, quota, etc.)
-		}
-	};
-
-	const normalizeWorkHoursPerDay = (value) => {
-		const hours = Math.round(Number(value) * 100) / 100;
-		if (!Number.isFinite(hours)) {
-			return WORK_HOURS_PER_DAY_DEFAULT;
-		}
-		return Math.min(
-			WORK_HOURS_PER_DAY_MAX,
-			Math.max(WORK_HOURS_PER_DAY_MIN, hours),
-		);
-	};
-
-	const loadWorkHoursPerDay = () => {
-		try {
-			const raw = localStorage.getItem(WORK_HOURS_PER_DAY_STORAGE_KEY);
-			if (!raw) {
-				return WORK_HOURS_PER_DAY_DEFAULT;
 			}
-			const parsed = JSON.parse(raw);
-			return normalizeWorkHoursPerDay(parsed?.hoursPerDay);
-		} catch {
-			return WORK_HOURS_PER_DAY_DEFAULT;
-		}
-	};
-
-	const saveWorkHoursPerDay = (hoursPerDay) => {
-		try {
-			localStorage.setItem(
-				WORK_HOURS_PER_DAY_STORAGE_KEY,
-				JSON.stringify({ hoursPerDay: normalizeWorkHoursPerDay(hoursPerDay) }),
-			);
-		} catch {
-			// ignore storage errors (private mode, quota, etc.)
-		}
-	};
+		};
 
 	const PAGES = [
 		{
@@ -493,18 +453,21 @@
 		};
 	};
 
-	const formatRelative = (ms) => {
-		const minutes = Math.ceil(ms / 60000);
-		if (minutes < 60) {
-			return `in ${minutes}m`;
-		}
-		const hours = Math.ceil(minutes / 60);
-		if (hours < 24) {
-			return `in ${hours}h`;
-		}
-		const days = Math.ceil(hours / 24);
-		return `in ${days}d`;
-	};
+		const formatRelative = (ms) => {
+			const minutesTotal = Math.ceil(ms / 60000);
+			if (minutesTotal < 60) {
+				return `in ${minutesTotal}m`;
+			}
+
+			const hoursTotal = Math.ceil(minutesTotal / 60);
+			if (hoursTotal < 24) {
+				return `in ${hoursTotal}h`;
+			}
+
+			const days = Math.floor(hoursTotal / 24);
+			const hours = hoursTotal % 24;
+			return hours > 0 ? `in ${days}d ${hours}h` : `in ${days}d`;
+		};
 
 	const formatCountdown = (seconds) => {
 		const clamped = Math.max(0, Math.floor(seconds || 0));
@@ -525,71 +488,18 @@
 		return formatRelative(diffMs);
 	};
 
-	const formatQuotaResetMeta = (resetAtSecondary, windowMinutesSecondary) => {
-		const labelSecondary = formatQuotaResetLabel(resetAtSecondary);
-		const windowSecondary = formatWindowLabel(
-			"secondary",
+		const formatQuotaResetMeta = (resetAtSecondary, windowMinutesSecondary) => {
+			const labelSecondary = formatQuotaResetLabel(resetAtSecondary);
+			const windowSecondary = formatWindowLabel(
+				"secondary",
 			windowMinutesSecondary,
 		);
 		const secondaryOk = labelSecondary !== RESET_ERROR_LABEL;
 		if (!secondaryOk) {
 			return "Quota reset unavailable";
-		}
-		return `Quota reset (${windowSecondary}) · ${labelSecondary}`;
-	};
-
-	const buildPacePlan = ({
-		remainingCredits,
-		resetAt,
-		workHoursPerDay,
-	}) => {
-		const resetDate = parseDate(resetAt);
-		if (!resetDate) {
-			return null;
-		}
-		const msLeft = resetDate.getTime() - Date.now();
-		if (!Number.isFinite(msLeft) || msLeft <= 0) {
-			return null;
-		}
-		const normalizedWorkHoursPerDay = normalizeWorkHoursPerDay(workHoursPerDay);
-		const workMinutesPerDay = normalizedWorkHoursPerDay * 60;
-		const credits = toNumber(remainingCredits) ?? 0;
-		const daysLeft = msLeft / (24 * 60 * 60 * 1000);
-		if (!Number.isFinite(daysLeft) || daysLeft <= 0) {
-			return null;
-		}
-		const creditsPerDay = credits / daysLeft;
-		const creditsPerWorkMinute =
-			workMinutesPerDay > 0 ? creditsPerDay / workMinutesPerDay : null;
-		return {
-			workHoursPerDay: normalizedWorkHoursPerDay,
-			daysLeft,
-			creditsPerDay,
-			creditsPerWorkMinute,
+			}
+			return `Quota reset (${windowSecondary}) · ${labelSecondary}`;
 		};
-	};
-
-	const formatQuotaResetAndPaceMeta = (
-		resetAtSecondary,
-		windowMinutesSecondary,
-		remainingCreditsSecondary,
-		workHoursPerDay,
-	) => {
-		const base = formatQuotaResetMeta(resetAtSecondary, windowMinutesSecondary);
-		const pace = buildPacePlan({
-			remainingCredits: remainingCreditsSecondary,
-			resetAt: resetAtSecondary,
-			workHoursPerDay,
-		});
-		if (!pace) {
-			return base;
-		}
-		const creditsPerWorkMinute = toNumber(pace.creditsPerWorkMinute);
-		if (creditsPerWorkMinute === null) {
-			return base;
-		}
-		return `${base} · Need ${formatCompactNumber(creditsPerWorkMinute)} credits/min`;
-	};
 
 	const buildUsageWindowTitle = (key, minutes) =>
 		`Remaining quota by account (${formatWindowLabel(key, minutes)})`;
@@ -1100,49 +1010,19 @@
 			.filter(Boolean);
 
 		const metrics = state.dashboardData.metrics;
-		const stats = [
-			{
-				title: `Tokens (${formatWindowLabel("secondary", secondaryWindowMinutes)})`,
-				value: formatCompactNumber(metrics.tokensSecondaryWindow),
+			const stats = [
+				{
+					title: `Tokens (${formatWindowLabel("secondary", secondaryWindowMinutes)})`,
+					value: formatCompactNumber(metrics.tokensSecondaryWindow),
 				meta: formatCachedTokensMeta(
 					metrics.tokensSecondaryWindow,
-					metrics.cachedTokensSecondaryWindow,
-				),
-			},
-				(() => {
-					const secondary = state.dashboardData.usage?.secondary || {};
-					// Note: `secondary.resetAt` is the *summary* reset time for the 7D window.
-					// The backend derives this as the earliest (`min`) secondary reset across all accounts,
-					// so the “Reset in …” value here answers: “when is the next 7D reset among my accounts?”.
-					// Per-account cards use `account.resetAtSecondary` and can differ.
-					const resetLabel = formatQuotaResetLabel(secondary.resetAt);
-					const pace = buildPacePlan({
-						remainingCredits: secondary.remaining,
-						resetAt: secondary.resetAt,
-						workHoursPerDay: state.work?.workHoursPerDay,
-				});
-				if (!pace || resetLabel === RESET_ERROR_LABEL) {
-					return {
-						title: `Quota pace (${formatWindowLabel("secondary", secondaryWindowMinutes)})`,
-						value: "--",
-						meta: "Reset unavailable",
-					};
-				}
-				const creditsPerWorkMinute = toNumber(pace.creditsPerWorkMinute);
-				const creditsPerDay = toNumber(pace.creditsPerDay);
-				return {
-					title: `Quota pace (${formatWindowLabel("secondary", secondaryWindowMinutes)})`,
-					value:
-						creditsPerWorkMinute === null
-							? "--"
-							: `${formatCompactNumber(creditsPerWorkMinute)} credits/min`,
-					meta: `${formatCompactNumber(creditsPerDay)} credits/day · Work ${pace.workHoursPerDay}h/day · Reset ${resetLabel}`,
-				};
-			})(),
-			{
-				title: "Cost (7d)",
-				value: formatCurrency(metrics.cost7d),
-				meta: `Avg per hour: ${formatCurrency(
+						metrics.cachedTokensSecondaryWindow,
+					),
+				},
+				{
+					title: "Cost (7d)",
+					value: formatCurrency(metrics.cost7d),
+					meta: `Avg per hour: ${formatCurrency(
 					avgPerHour(metrics.cost7d, secondaryWindowMinutes),
 				)}`,
 			},
@@ -1250,19 +1130,14 @@
 					class: account.status,
 					label: statusLabel(account.status),
 				},
-				remaining: remainingRounded,
-				remainingText: formatPercent(secondaryRemaining),
-				progressClass: calculateProgressClass(account.status, secondaryRemaining),
-				marquee: account.status === "deactivated",
-				meta: formatQuotaResetAndPaceMeta(
-					account.resetAtSecondary,
-					secondaryWindowMinutes,
-					account.remainingCreditsSecondary,
-					state.work?.workHoursPerDay,
-				),
-				actions: buildAccountActions(account),
-			};
-		});
+					remaining: remainingRounded,
+					remainingText: formatPercent(secondaryRemaining),
+					progressClass: calculateProgressClass(account.status, secondaryRemaining),
+					marquee: account.status === "deactivated",
+					meta: formatQuotaResetMeta(account.resetAtSecondary, secondaryWindowMinutes),
+					actions: buildAccountActions(account),
+				};
+			});
 
 		const requests = state.dashboardData.recentRequests.map((request) => {
 			const rawError = request.errorMessage || request.errorCode || "";
@@ -1619,16 +1494,15 @@
 		) {
 			throw new Error("state_defaults.js must be loaded before index.js");
 		}
-		const SortUtils = globalThis.CodexLbSortUtils;
-		if (!SortUtils || typeof SortUtils.sortAccounts !== "function") {
-			throw new Error("sort_utils.js must be loaded before index.js");
-		}
-		const initialAutoRefresh = loadAutoRefreshPreferences();
-		const initialWorkHoursPerDay = loadWorkHoursPerDay();
-			Alpine.data("feApp", () => ({
-				view: "dashboard",
-				pages: createPages(),
-				backendPath: "/backend-api",
+			const SortUtils = globalThis.CodexLbSortUtils;
+			if (!SortUtils || typeof SortUtils.sortAccounts !== "function") {
+				throw new Error("sort_utils.js must be loaded before index.js");
+			}
+			const initialAutoRefresh = loadAutoRefreshPreferences();
+				Alpine.data("feApp", () => ({
+					view: "dashboard",
+					pages: createPages(),
+					backendPath: "/backend-api",
 				ui: createUiConfig(),
 				dashboardData: createEmptyDashboardData(),
 				dashboard: createEmptyDashboardView(),
@@ -1704,18 +1578,15 @@
 				pollTimerId: null,
 				countdownTimerId: null,
 			},
-			autoRefresh: {
-				enabled: initialAutoRefresh.enabled,
-				intervalSeconds: initialAutoRefresh.intervalSeconds,
-				timerId: null,
-			},
-			work: {
-				workHoursPerDay: initialWorkHoursPerDay,
-			},
-			isLoading: true,
-			hasInitialized: false,
-			refreshPromise: null,
-			settingsLoadPromise: null,
+				autoRefresh: {
+					enabled: initialAutoRefresh.enabled,
+					intervalSeconds: initialAutoRefresh.intervalSeconds,
+					timerId: null,
+				},
+				isLoading: true,
+				hasInitialized: false,
+				refreshPromise: null,
+				settingsLoadPromise: null,
 
 			async init() {
 				if (this.hasInitialized) {
@@ -1734,18 +1605,14 @@
 					this.persistAutoRefresh();
 					this.syncAutoRefresh();
 				});
-				this.$watch("autoRefresh.intervalSeconds", () => {
-					this.persistAutoRefresh();
-					this.syncAutoRefresh();
-				});
-				this.$watch("work.workHoursPerDay", () => {
-					this.persistWork();
-					this.dashboard = buildDashboardView(this);
-				});
-				if (this.view === "settings") {
-					this.ensureSettingsLoaded();
-				}
-				this.syncTitle();
+					this.$watch("autoRefresh.intervalSeconds", () => {
+						this.persistAutoRefresh();
+						this.syncAutoRefresh();
+					});
+					if (this.view === "settings") {
+						this.ensureSettingsLoaded();
+					}
+					this.syncTitle();
 				this.syncUrl(true);
 				this.$watch("view", (value) => {
 					this.syncTitle();
@@ -1779,23 +1646,16 @@
 				this.syncAutoRefresh();
 			},
 
-			persistAutoRefresh() {
-				saveAutoRefreshPreferences({
-					enabled: this.autoRefresh.enabled,
-					intervalSeconds: this.autoRefresh.intervalSeconds,
-				});
-			},
-			persistWork() {
-				saveWorkHoursPerDay(this.work.workHoursPerDay);
-				const normalized = normalizeWorkHoursPerDay(this.work.workHoursPerDay);
-				if (this.work.workHoursPerDay !== normalized) {
-					this.work.workHoursPerDay = normalized;
-				}
-			},
-			stopAutoRefresh() {
-				if (this.autoRefresh.timerId) {
-					clearInterval(this.autoRefresh.timerId);
-					this.autoRefresh.timerId = null;
+				persistAutoRefresh() {
+					saveAutoRefreshPreferences({
+						enabled: this.autoRefresh.enabled,
+						intervalSeconds: this.autoRefresh.intervalSeconds,
+					});
+				},
+				stopAutoRefresh() {
+					if (this.autoRefresh.timerId) {
+						clearInterval(this.autoRefresh.timerId);
+						this.autoRefresh.timerId = null;
 				}
 			},
 			shouldAutoRefresh() {
@@ -2666,26 +2526,24 @@
 						: "paused";
 
 				const selectedCount = this.selectedAccountIds.length;
-				const items =
-					this.view === "accounts"
-						? [
-								`Selected: ${selectedCount}`,
-								selectedCount === 1
-									? `Account: ${this.accounts.selectedId || "--"}`
-									: null,
-								`Rotation: ${this.dashboardData.routing?.rotationEnabled ? "enabled" : "disabled"}`,
-								`Last sync: ${lastSyncLabel}`,
-								`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
-								`Work: ${normalizeWorkHoursPerDay(this.work.workHoursPerDay)}h/day`,
-								`Auto-refresh: ${autoRefreshLabel}`,
-						  ].filter(Boolean)
-						: [
-								`Last sync: ${lastSyncLabel}`,
-								`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
-								`Backend: ${this.backendPath}`,
-								`Work: ${normalizeWorkHoursPerDay(this.work.workHoursPerDay)}h/day`,
-								`Auto-refresh: ${autoRefreshLabel}`,
-						  ];
+					const items =
+						this.view === "accounts"
+							? [
+									`Selected: ${selectedCount}`,
+									selectedCount === 1
+										? `Account: ${this.accounts.selectedId || "--"}`
+										: null,
+									`Rotation: ${this.dashboardData.routing?.rotationEnabled ? "enabled" : "disabled"}`,
+									`Last sync: ${lastSyncLabel}`,
+									`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
+									`Auto-refresh: ${autoRefreshLabel}`,
+							  ].filter(Boolean)
+							: [
+									`Last sync: ${lastSyncLabel}`,
+									`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
+									`Backend: ${this.backendPath}`,
+									`Auto-refresh: ${autoRefreshLabel}`,
+							  ];
 				if (this.importState.isLoading) {
 					items.unshift(
 						`Importing ${this.importState.fileName || "auth.json"}...`,

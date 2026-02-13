@@ -29,6 +29,22 @@ When multiple accounts are pinned, routing is **not** round-robin.
 - Stickiness never overrides the routing pool: if a sticky mapping points to an unpinned account while the pool is
   active, the proxy drops that mapping and reassigns the key within the pinned pool.
 
+### Why waste-pressure (not “earliest reset first”)
+
+It can be tempting to pick accounts by “earliest secondary reset first”, but that strategy is **deadline-only** and
+interacts poorly with sticky routing:
+
+- If a `prompt_cache_key` is assigned to an account that resets soon, that account will often reset **before** it ever
+  becomes unavailable (it becomes *more* usable after reset).
+- Because stickiness is honored as long as the pinned account remains eligible, the proxy will keep sending that
+  key to the same account after its reset, instead of migrating to other accounts whose secondary credits are still in
+  the pre-reset window.
+- The result can be avoidable waste: other accounts’ secondary windows can expire with large unused balances simply
+  because the sticky traffic never moved.
+
+Waste-pressure mitigates this by prioritizing the accounts whose *unused secondary credits are expiring fastest*
+(`secondary_remaining / time_to_reset`), rather than only considering the reset timestamp.
+
 ## Failure Modes
 
 - If the pinned pool contains only unavailable accounts, routing will fall back to normal selection (see `spec.md`).
