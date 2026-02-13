@@ -18,7 +18,7 @@ from app.core.balancer import (
 from app.core.balancer.types import UpstreamError
 from app.core.config.settings import get_settings
 from app.core.usage.quota import apply_usage_quota
-from app.db.models import Account, UsageHistory
+from app.db.models import Account, AccountStatus, UsageHistory
 from app.modules.accounts.repository import AccountsRepository, AccountStatusUpdate
 from app.modules.proxy.repo_bundle import ProxyRepoFactory
 from app.modules.proxy.sticky_repository import StickySessionsRepository
@@ -168,9 +168,14 @@ class LoadBalancer:
                 )
                 await self._sync_usage_statuses(repos.accounts, account_map, states)
                 pinned_raw = await repos.settings.pinned_account_ids()
-                pinned_account_ids = frozenset(
-                    account_id for account_id in pinned_raw if account_id in account_map
-                )
+                quota_exceeded_ids = {
+                    state.account_id for state in states if state.status == AccountStatus.QUOTA_EXCEEDED
+                }
+                pinned_prune = [account_id for account_id in pinned_raw if account_id in quota_exceeded_ids]
+                if pinned_prune:
+                    await repos.settings.remove_pinned_account_ids(pinned_prune)
+                    pinned_raw = [account_id for account_id in pinned_raw if account_id not in set(pinned_prune)]
+                pinned_account_ids = frozenset(account_id for account_id in pinned_raw if account_id in account_map)
                 accounts = [_clone_account(account) for account in accounts_orm]
                 account_map = {account.id: account for account in accounts}
 
@@ -268,6 +273,7 @@ class LoadBalancer:
         handle_quota_exceeded(state, error)
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+            await repos.settings.remove_pinned_account_ids([account.id])
         self._snapshot = None
 
     async def mark_permanent_failure(self, account: Account, error_code: str) -> None:

@@ -80,6 +80,21 @@ class SettingsRepository:
         settings = await self.get_or_create()
         return _decode_pinned_account_ids(settings.pinned_account_ids_json)
 
+    async def remove_pinned_account_ids(self, account_ids: Sequence[str]) -> DashboardSettings:
+        normalized_remove = set(_normalize_account_ids(account_ids))
+        if not normalized_remove:
+            return await self.get_or_create()
+
+        settings = await self.get_or_create()
+        existing = _decode_pinned_account_ids(settings.pinned_account_ids_json)
+        updated = [account_id for account_id in existing if account_id not in normalized_remove]
+        if updated == existing:
+            return settings
+
+        settings.pinned_account_ids_json = _encode_pinned_account_ids(updated)
+        await self.commit_refresh(settings)
+        return settings
+
     async def commit_refresh(self, settings: DashboardSettings) -> None:
         await self._session.commit()
         await self._session.refresh(settings)

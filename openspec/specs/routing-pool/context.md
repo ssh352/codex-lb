@@ -48,6 +48,7 @@ Waste-pressure mitigates this by prioritizing the accounts whose *unused seconda
 ## Failure Modes
 
 - If the pinned pool contains only unavailable accounts, routing will fall back to normal selection (see `spec.md`).
+- If an account becomes `quota_exceeded`, the system prunes it from the pinned pool so the dashboard pin state clears.
 - If dashboard settings are corrupted (invalid JSON), settings access should fail fast so operators can correct the
   stored value.
 

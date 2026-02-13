@@ -272,3 +272,74 @@ async def test_load_balancer_falls_back_when_pinned_pool_unavailable(db_setup):
     selection = await balancer.select_account(sticky_key="pool_2")
     assert selection.account is not None
     assert selection.account.id == acc_other.id
+
+
+@pytest.mark.asyncio
+async def test_load_balancer_unpins_quota_exceeded_accounts(db_setup):
+    encryptor = TokenEncryptor()
+    now = utcnow()
+    now_epoch = int(now.replace(tzinfo=timezone.utc).timestamp())
+
+    acc_quota = Account(
+        id="acc_pool_quota",
+        email="pool_quota@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access-a"),
+        refresh_token_encrypted=encryptor.encrypt("refresh-a"),
+        id_token_encrypted=encryptor.encrypt("id-a"),
+        last_refresh=now,
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+    acc_other = Account(
+        id="acc_pool_quota_fallback",
+        email="pool_quota_fallback@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access-b"),
+        refresh_token_encrypted=encryptor.encrypt("refresh-b"),
+        id_token_encrypted=encryptor.encrypt("id-b"),
+        last_refresh=now,
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(acc_quota)
+        await accounts_repo.upsert(acc_other)
+
+    async with SessionLocal() as session:
+        settings_repo = SettingsRepository(session)
+        usage_repo = UsageRepository(session)
+        await settings_repo.update(pinned_account_ids=[acc_quota.id])
+
+        await usage_repo.add_entry(
+            account_id=acc_quota.id,
+            used_percent=10.0,
+            window="primary",
+            reset_at=now_epoch + 3600,
+            window_minutes=300,
+        )
+        await usage_repo.add_entry(
+            account_id=acc_quota.id,
+            used_percent=100.0,
+            window="secondary",
+            reset_at=now_epoch + 7200,
+            window_minutes=10080,
+        )
+        await usage_repo.add_entry(
+            account_id=acc_other.id,
+            used_percent=5.0,
+            window="primary",
+            reset_at=now_epoch + 3600,
+            window_minutes=300,
+        )
+
+    balancer = LoadBalancer(_repo_factory)
+    selection = await balancer.select_account(sticky_key="pool_quota_1")
+    assert selection.account is not None
+    assert selection.account.id == acc_other.id
+
+    async with SessionLocal() as session:
+        settings_repo = SettingsRepository(session)
+        assert await settings_repo.pinned_account_ids() == []
