@@ -733,9 +733,9 @@
   </div>
   <div class="dialog-backdrop" :class="{ 'is-open': messageBox.open }" :aria-hidden="!messageBox.open"
     @click="closeMessageBox"></div>
-  <div class="window active is-bright message-dialog" role="dialog" aria-modal="true"
-    aria-labelledby="message-box-title" aria-describedby="message-box-body" :aria-hidden="!messageBox.open"
-    :class="{ 'is-open': messageBox.open }">
+	  <div class="window active is-bright message-dialog" role="dialog" aria-modal="true"
+	    aria-labelledby="message-box-title" aria-describedby="message-box-body" :aria-hidden="!messageBox.open"
+	    :class="{ 'is-open': messageBox.open }">
     <div class="title-bar">
       <div class="title-bar-text" id="message-box-title" x-text="messageBox.title"></div>
       <div class="title-bar-controls">
@@ -754,17 +754,30 @@
         </div>
       </div>
     </div>
-    <footer class="message-dialog__actions">
-      <button x-show="messageBox.mode === 'confirm'" type="button" @click="cancelMessageBox"
-        x-text="messageBox.cancelLabel"></button>
-      <button x-show="messageBox.mode === 'confirm'" type="button" class="default" @click="confirmMessageBox"
-        x-text="messageBox.confirmLabel"></button>
-      <button x-show="messageBox.mode !== 'confirm'" type="button" class="default" @click="closeMessageBox">OK</button>
-    </footer>
-  </div>
-  </div>
-  </main>
-  </div>
+	    <footer class="message-dialog__actions">
+	      <button x-show="messageBox.mode === 'confirm'" type="button" @click="cancelMessageBox"
+	        x-text="messageBox.cancelLabel"></button>
+	      <button x-show="messageBox.mode === 'confirm'" type="button" class="default" @click="confirmMessageBox"
+	        x-text="messageBox.confirmLabel"></button>
+	      <button x-show="messageBox.mode !== 'confirm'" type="button" class="default" @click="closeMessageBox">OK</button>
+	    </footer>
+	  </div>
+	  <!-- Non-blocking snackbar/toast for routine feedback (does not require user dismissal). -->
+	  <div class="toast-stack" aria-live="polite" aria-relevant="additions text">
+	    <div class="toast" x-show="toast.open" x-transition.opacity
+	      :class="toast.tone ? `is-${toast.tone}` : ''">
+	      <div class="toast__message" x-text="toast.message"></div>
+	      <div class="toast__actions">
+	        <button type="button" class="toast__action" x-show="toast.actionLabel" @click="runToastAction"
+	          x-text="toast.actionLabel"></button>
+	        <button type="button" class="toast__dismiss" aria-label="Dismiss notification"
+	          @click="dismissToast"></button>
+	      </div>
+	    </div>
+	  </div>
+	  </div>
+	  </main>
+	  </div>
   <script defer src="/dashboard/selection_utils.js"></script>
   <script defer src="/dashboard/ui_utils.js"></script>
   <script defer src="/dashboard/state_defaults.js"></script>

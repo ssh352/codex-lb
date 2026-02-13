@@ -1109,13 +1109,17 @@
 					metrics.cachedTokensSecondaryWindow,
 				),
 			},
-			(() => {
-				const secondary = state.dashboardData.usage?.secondary || {};
-				const resetLabel = formatQuotaResetLabel(secondary.resetAt);
-				const pace = buildPacePlan({
-					remainingCredits: secondary.remaining,
-					resetAt: secondary.resetAt,
-					workHoursPerDay: state.work?.workHoursPerDay,
+				(() => {
+					const secondary = state.dashboardData.usage?.secondary || {};
+					// Note: `secondary.resetAt` is the *summary* reset time for the 7D window.
+					// The backend derives this as the earliest (`min`) secondary reset across all accounts,
+					// so the “Reset in …” value here answers: “when is the next 7D reset among my accounts?”.
+					// Per-account cards use `account.resetAtSecondary` and can differ.
+					const resetLabel = formatQuotaResetLabel(secondary.resetAt);
+					const pace = buildPacePlan({
+						remainingCredits: secondary.remaining,
+						resetAt: secondary.resetAt,
+						workHoursPerDay: state.work?.workHoursPerDay,
 				});
 				if (!pace || resetLabel === RESET_ERROR_LABEL) {
 					return {
@@ -1621,13 +1625,13 @@
 		}
 		const initialAutoRefresh = loadAutoRefreshPreferences();
 		const initialWorkHoursPerDay = loadWorkHoursPerDay();
-		Alpine.data("feApp", () => ({
-			view: "dashboard",
-			pages: createPages(),
-			backendPath: "/backend-api",
-			ui: createUiConfig(),
-			dashboardData: createEmptyDashboardData(),
-			dashboard: createEmptyDashboardView(),
+			Alpine.data("feApp", () => ({
+				view: "dashboard",
+				pages: createPages(),
+				backendPath: "/backend-api",
+				ui: createUiConfig(),
+				dashboardData: createEmptyDashboardData(),
+				dashboard: createEmptyDashboardView(),
 
 			filtersDraft: createDefaultRequestFilters(),
 			filtersApplied: createDefaultRequestFilters(),
@@ -1659,22 +1663,33 @@
 				isLoading: false,
 				fileName: "",
 			},
-			messageBox: {
-				open: false,
-				title: "",
-				message: "",
-				details: "",
-				iconTone: "",
-				mode: "alert",
-				confirmLabel: "OK",
-				cancelLabel: "Cancel",
-			},
-			messageBoxResolver: null,
-			authDialog: {
-				open: false,
-				stage: "intro",
-				selectedMethod: "browser",
-				isLoading: false,
+				messageBox: {
+					open: false,
+					title: "",
+					message: "",
+					details: "",
+					iconTone: "",
+					mode: "alert",
+					confirmLabel: "OK",
+					cancelLabel: "Cancel",
+				},
+				messageBoxResolver: null,
+				// Non-blocking snackbar/toast for routine feedback (Gmail-style).
+				// Use this for reversible/low-risk actions (pin/unpin, copy, saved).
+				// Keep `messageBox` for confirmations and high-detail/critical errors.
+				toast: {
+					open: false,
+					tone: "info",
+					message: "",
+					actionLabel: "",
+				},
+				toastTimerId: null,
+				toastActionFn: null,
+				authDialog: {
+					open: false,
+					stage: "intro",
+					selectedMethod: "browser",
+					isLoading: false,
 				authorizationUrl: "",
 				verificationUrl: "",
 				userCode: "",
@@ -1882,22 +1897,22 @@
 					return this.settingsLoadPromise;
 				}
 				this.settings.isLoading = true;
-				this.settingsLoadPromise = (async () => {
-					try {
-						const settings = await fetchSettings();
-						this.settings.preferEarlierResetAccounts =
-							settings.preferEarlierResetAccounts;
-						this.settings.pinnedAccountIds = settings.pinnedAccountIds || [];
-						this.settings.hasLoaded = true;
-					} catch (err) {
-						console.error("Failed to load settings:", err);
-						this.openMessageBox({
-							tone: "error",
-							title: "Settings load failed",
-							message: err?.message || "Failed to load settings.",
-						});
-					}
-				})();
+					this.settingsLoadPromise = (async () => {
+						try {
+							const settings = await fetchSettings();
+							this.settings.preferEarlierResetAccounts =
+								settings.preferEarlierResetAccounts;
+							this.settings.pinnedAccountIds = settings.pinnedAccountIds || [];
+							this.settings.hasLoaded = true;
+						} catch (err) {
+							console.error("Failed to load settings:", err);
+							this.openMessageBox({
+								tone: "error",
+								title: "Settings load failed",
+								message: err?.message || "Failed to load settings.",
+							});
+						}
+					})();
 				try {
 					await this.settingsLoadPromise;
 				} finally {
@@ -2117,25 +2132,24 @@
 							payload,
 						"save settings",
 					);
-							const normalized = normalizeSettingsPayload(updated);
-							this.settings.preferEarlierResetAccounts =
-								normalized.preferEarlierResetAccounts;
-							this.settings.pinnedAccountIds = normalized.pinnedAccountIds || [];
-						this.openMessageBox({
-							tone: "success",
-							title: "Settings saved",
-							message: "Settings updated.",
-					});
-				} catch (error) {
-					this.openMessageBox({
-						tone: "error",
-						title: "Settings save failed",
-						message: error.message || "Failed to save settings.",
-					});
-				} finally {
-					this.settings.isSaving = false;
-				}
-			},
+								const normalized = normalizeSettingsPayload(updated);
+								this.settings.preferEarlierResetAccounts =
+									normalized.preferEarlierResetAccounts;
+								this.settings.pinnedAccountIds = normalized.pinnedAccountIds || [];
+							this.openToast({
+								tone: "success",
+								message: "Settings saved.",
+							});
+					} catch (error) {
+						this.openToast({
+							tone: "error",
+							message: error.message || "Failed to save settings.",
+							timeoutMs: 8000,
+						});
+					} finally {
+						this.settings.isSaving = false;
+					}
+				},
 			focusAccountSearch() {
 				this.$refs.accountSearch?.focus();
 			},
@@ -2222,12 +2236,12 @@
 			logImportClick(source) {
 				console.info("[auth-import] click", { source });
 			},
-			openMessageBox({ tone = "info", title, message, details } = {}) {
-				if (this.messageBoxResolver) {
-					const resolve = this.messageBoxResolver;
-					this.messageBoxResolver = null;
-					resolve(false);
-				}
+				openMessageBox({ tone = "info", title, message, details } = {}) {
+					if (this.messageBoxResolver) {
+						const resolve = this.messageBoxResolver;
+						this.messageBoxResolver = null;
+						resolve(false);
+					}
 				const toneKey = MESSAGE_TONE_META[tone] ? tone : "info";
 				const meta = MESSAGE_TONE_META[toneKey] || MESSAGE_TONE_META.info;
 				this.messageBox.open = true;
@@ -2236,14 +2250,65 @@
 				this.messageBox.details = details || "";
 				this.messageBox.iconTone = toneKey;
 				this.messageBox.mode = "alert";
-				this.messageBox.confirmLabel = "OK";
-				this.messageBox.cancelLabel = "Cancel";
-			},
-			openConfirmBox({
-				tone = "question",
-				title,
-				message,
-				details,
+					this.messageBox.confirmLabel = "OK";
+					this.messageBox.cancelLabel = "Cancel";
+				},
+				openToast({
+					tone = "info",
+					message = "",
+					actionLabel = "",
+					action = null,
+					timeoutMs = 4500,
+				} = {}) {
+					// Snackbar/toast: shown briefly and auto-dismissed to avoid blocking the user.
+					// Optionally includes a single action (e.g. Undo).
+					this.dismissToast();
+					this.toast.open = true;
+					this.toast.tone = tone || "info";
+					this.toast.message = String(message || "").trim();
+					this.toast.actionLabel = String(actionLabel || "").trim();
+					this.toastActionFn = typeof action === "function" ? action : null;
+
+					if (timeoutMs > 0) {
+						this.toastTimerId = window.setTimeout(() => {
+							this.dismissToast();
+						}, timeoutMs);
+					}
+				},
+				dismissToast() {
+					// Idempotent; safe to call before showing a new toast.
+					if (this.toastTimerId) {
+						clearTimeout(this.toastTimerId);
+						this.toastTimerId = null;
+					}
+					this.toastActionFn = null;
+					this.toast.open = false;
+					this.toast.tone = "info";
+					this.toast.message = "";
+					this.toast.actionLabel = "";
+				},
+				runToastAction() {
+					// Run the toast action (if any) after dismissing, so the UI feels immediate.
+					const fn = this.toastActionFn;
+					this.dismissToast();
+					if (fn) {
+						try {
+							const result = fn();
+							if (result && typeof result.then === "function") {
+								result.catch((error) => {
+									console.error("[toast] action failed", error);
+								});
+							}
+						} catch (error) {
+							console.error("[toast] action failed", error);
+						}
+					}
+				},
+				openConfirmBox({
+					tone = "question",
+					title,
+					message,
+					details,
 				confirmLabel = "OK",
 				cancelLabel = "Cancel",
 			} = {}) {
@@ -2281,9 +2346,9 @@
 			cancelMessageBox() {
 				this.resolveMessageBox(false);
 			},
-			closeMessageBox() {
-				this.resolveMessageBox(false);
-			},
+				closeMessageBox() {
+					this.resolveMessageBox(false);
+				},
 			openAddAccountDialog() {
 				this.resetAuthDialogState();
 				this.authDialog.open = true;
@@ -2413,29 +2478,28 @@
 						document.body.removeChild(textarea);
 					}
 
-					// Only show message box if auth dialog is not open and button feedback wasn't possible
-					if (!this.authDialog.open && !btn) {
-						this.openMessageBox({
-							tone: "success",
-							title: "Copied",
-							message: `${label} copied to clipboard.`,
-						});
+						// Only show message box if auth dialog is not open and button feedback wasn't possible
+						if (!this.authDialog.open && !btn) {
+							this.openToast({
+								tone: "success",
+								message: `${label} copied to clipboard.`,
+							});
+						}
+					} catch (err) {
+						console.error("Clipboard error:", err);
+						if (btn) {
+							btn.textContent = "Failed";
+							btn.classList.remove("copy-success");
+							window.setTimeout(() => { btn.textContent = originalText; }, 2000);
+						} else if (!this.authDialog.open) {
+							this.openToast({
+								tone: "error",
+								message: `Could not copy ${label}.`,
+								timeoutMs: 8000,
+							});
+						}
 					}
-				} catch (err) {
-					console.error("Clipboard error:", err);
-					if (btn) {
-						btn.textContent = "Failed";
-						btn.classList.remove("copy-success");
-						window.setTimeout(() => { btn.textContent = originalText; }, 2000);
-					} else if (!this.authDialog.open) {
-						this.openMessageBox({
-							tone: "error",
-							title: "Copy failed",
-							message: `Could not copy ${label}.`,
-						});
-					}
-				}
-			},
+				},
 			stopAuthPolling() {
 				if (this.authDialog.pollTimerId) {
 					clearInterval(this.authDialog.pollTimerId);
@@ -2728,17 +2792,17 @@
 				}
 			},
 			async _bulkCall(ids, actionLabel, fn) {
-				const accountIds = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
-				if (!accountIds.length) {
-					this.openMessageBox({
-						tone: "warning",
-						title: "No accounts selected",
-						message: "Select one or more accounts first.",
-					});
-					return;
-				}
-				this.authDialog.isLoading = true;
-				const failures = [];
+					const accountIds = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
+					if (!accountIds.length) {
+						this.openToast({
+							tone: "warning",
+							message: "Select one or more accounts first.",
+							timeoutMs: 6000,
+						});
+						return;
+					}
+					this.authDialog.isLoading = true;
+					const failures = [];
 				for (const accountId of accountIds) {
 					try {
 						await fn(accountId);
@@ -2751,18 +2815,17 @@
 				}
 				try {
 					await this.refreshAll({ preferredId: this.accounts.selectedId || "" });
-				} finally {
-					this.authDialog.isLoading = false;
-				}
-				if (!failures.length) {
-					this.openMessageBox({
-						tone: "success",
-						title: "Done",
-						message: `${actionLabel} applied to ${accountIds.length} account(s).`,
-					});
-					return;
-				}
-				const details = failures.map((entry) => `${entry.accountId}: ${entry.message}`).join("\n");
+					} finally {
+						this.authDialog.isLoading = false;
+					}
+					if (!failures.length) {
+						this.openToast({
+							tone: "success",
+							message: `${actionLabel} applied to ${accountIds.length} account(s).`,
+						});
+						return;
+					}
+					const details = failures.map((entry) => `${entry.accountId}: ${entry.message}`).join("\n");
 				this.openMessageBox({
 					tone: "warning",
 					title: "Partial success",
@@ -2782,18 +2845,18 @@
 					postJson(API_ENDPOINTS.accountReactivate(accountId), {}, "resume account"),
 				);
 			},
-			async deleteSelectedAccounts() {
-				const ids = this.selectedAccountIds;
-				if (!ids.length) {
-					return this.openMessageBox({
-						tone: "warning",
-						title: "No accounts selected",
-						message: "Select one or more accounts before deleting.",
-					});
-				}
-				const confirmed = await this.openConfirmBox({
-					title: "Delete accounts?",
-					message: `Delete ${ids.length} account(s)? This cannot be undone.`,
+				async deleteSelectedAccounts() {
+					const ids = this.selectedAccountIds;
+					if (!ids.length) {
+						return this.openToast({
+							tone: "warning",
+							message: "Select one or more accounts before deleting.",
+							timeoutMs: 6000,
+						});
+					}
+					const confirmed = await this.openConfirmBox({
+						title: "Delete accounts?",
+						message: `Delete ${ids.length} account(s)? This cannot be undone.`,
 					confirmLabel: "Delete",
 					cancelLabel: "Cancel",
 				});
@@ -2804,14 +2867,18 @@
 					deleteJson(API_ENDPOINTS.accountDelete(accountId), "delete account"),
 				);
 			},
-			async _updateRoutingPool(mutator, actionLabel) {
-				this.settings.isSaving = true;
-				try {
-					const current = await fetchSettings();
-					const currentSet = new Set(current.pinnedAccountIds || []);
-					const nextSet = mutator(currentSet);
-					const next = Array.from(nextSet);
-					const updated = await putJson(
+				async _updateRoutingPool(mutator, actionLabel) {
+					this.settings.isSaving = true;
+					try {
+						const current = await fetchSettings();
+						// Capture the previous routing pool so "Undo" can revert exactly.
+						const previousPinnedAccountIds = Array.isArray(current.pinnedAccountIds)
+							? [...current.pinnedAccountIds]
+							: [];
+						const currentSet = new Set(current.pinnedAccountIds || []);
+						const nextSet = mutator(currentSet);
+						const next = Array.from(nextSet);
+						const updated = await putJson(
 						API_ENDPOINTS.settings,
 						{
 							preferEarlierResetAccounts: current.preferEarlierResetAccounts,
@@ -2820,36 +2887,69 @@
 						actionLabel,
 					);
 					const normalized = normalizeSettingsPayload(updated);
-					this.settings.preferEarlierResetAccounts =
-						normalized.preferEarlierResetAccounts;
-					this.settings.pinnedAccountIds = normalized.pinnedAccountIds;
-					await this.refreshAll({ preferredId: this.accounts.selectedId || "" });
-					this.openMessageBox({
-						tone: "success",
-						title: "Routing pool updated",
-						message: "Pinned accounts updated.",
-					});
-				} catch (error) {
-					this.openMessageBox({
-						tone: "error",
-						title: "Routing pool update failed",
-						message: error?.message || "Failed to update routing pool.",
-					});
-				} finally {
-					this.settings.isSaving = false;
-				}
-			},
-			async addSelectedAccountsToRoutingPool() {
-				const ids = this.selectedAccountIds;
-				if (!ids.length) {
-					return this.openMessageBox({
-						tone: "warning",
-						title: "No accounts selected",
-						message: "Select one or more accounts first.",
-					});
-				}
-				return this._updateRoutingPool(
-					(currentSet) => {
+						this.settings.preferEarlierResetAccounts =
+							normalized.preferEarlierResetAccounts;
+						this.settings.pinnedAccountIds = normalized.pinnedAccountIds;
+						await this.refreshAll({ preferredId: this.accounts.selectedId || "" });
+						this.openToast({
+							tone: "success",
+							message: "Pinned accounts updated.",
+							actionLabel: "Undo",
+							action: () =>
+								putJson(
+									API_ENDPOINTS.settings,
+									{
+										preferEarlierResetAccounts:
+											this.settings.preferEarlierResetAccounts,
+										pinnedAccountIds: previousPinnedAccountIds,
+									},
+									"undo pin accounts",
+								)
+									.then((reverted) => normalizeSettingsPayload(reverted))
+									.then((normalizedReverted) => {
+										this.settings.preferEarlierResetAccounts =
+											normalizedReverted.preferEarlierResetAccounts;
+										this.settings.pinnedAccountIds =
+											normalizedReverted.pinnedAccountIds;
+										return this.refreshAll({
+											preferredId: this.accounts.selectedId || "",
+										});
+									})
+									.then(() => {
+										this.openToast({
+											tone: "success",
+											message: "Undone.",
+										});
+									})
+									.catch((error) => {
+										this.openToast({
+											tone: "error",
+											message: error?.message || "Undo failed.",
+											timeoutMs: 8000,
+										});
+									}),
+						});
+					} catch (error) {
+						this.openToast({
+							tone: "error",
+							message: error?.message || "Failed to update routing pool.",
+							timeoutMs: 8000,
+						});
+					} finally {
+						this.settings.isSaving = false;
+					}
+				},
+				async addSelectedAccountsToRoutingPool() {
+					const ids = this.selectedAccountIds;
+					if (!ids.length) {
+						return this.openToast({
+							tone: "warning",
+							message: "Select one or more accounts first.",
+							timeoutMs: 6000,
+						});
+					}
+					return this._updateRoutingPool(
+						(currentSet) => {
 						for (const id of ids) {
 							currentSet.add(id);
 						}
@@ -2858,17 +2958,17 @@
 					"pin accounts",
 				);
 			},
-			async removeSelectedAccountsFromRoutingPool() {
-				const ids = this.selectedAccountIds;
-				if (!ids.length) {
-					return this.openMessageBox({
-						tone: "warning",
-						title: "No accounts selected",
-						message: "Select one or more accounts first.",
-					});
-				}
-				return this._updateRoutingPool(
-					(currentSet) => {
+				async removeSelectedAccountsFromRoutingPool() {
+					const ids = this.selectedAccountIds;
+					if (!ids.length) {
+						return this.openToast({
+							tone: "warning",
+							message: "Select one or more accounts first.",
+							timeoutMs: 6000,
+						});
+					}
+					return this._updateRoutingPool(
+						(currentSet) => {
 						for (const id of ids) {
 							currentSet.delete(id);
 						}
@@ -2897,21 +2997,20 @@
 					document.execCommand("copy");
 					document.body.removeChild(node);
 				};
-				try {
-					await writeClipboard();
-					this.openMessageBox({
-						tone: "success",
-						title: label,
-						message: text,
-					});
-				} catch (error) {
-					this.openMessageBox({
-						tone: "error",
-						title: "Copy failed",
-						message: error?.message || "Failed to copy to clipboard.",
-					});
-				}
-			},
+					try {
+						await writeClipboard();
+						this.openToast({
+							tone: "success",
+							message: label ? `${label} copied.` : "Copied.",
+						});
+					} catch (error) {
+						this.openToast({
+							tone: "error",
+							message: error?.message || "Failed to copy to clipboard.",
+							timeoutMs: 8000,
+						});
+					}
+				},
 			formatAccountIdShort(value) {
 				return UiUtils.formatAccountIdShort(value);
 			},
@@ -2935,17 +3034,17 @@
 			startReauthFlow() {
 				this.openAddAccountDialog();
 			},
-			async resumeAccount(accountId) {
-				if (!accountId) {
-					this.openMessageBox({
-						tone: "warning",
-						title: "No account selected",
-						message: "Select an account before resuming.",
-					});
-					return;
-				}
-				const accountLabel = formatAccountLabel(accountId, this.accounts.rows);
-				const confirmed = await this.openConfirmBox({
+				async resumeAccount(accountId) {
+					if (!accountId) {
+						this.openToast({
+							tone: "warning",
+							message: "Select an account before resuming.",
+							timeoutMs: 6000,
+						});
+						return;
+					}
+					const accountLabel = formatAccountLabel(accountId, this.accounts.rows);
+					const confirmed = await this.openConfirmBox({
 					title: "Resume account?",
 					message: `Resume account ${accountLabel}? Routing will include it again.`,
 					confirmLabel: "Resume",
@@ -2960,40 +3059,39 @@
 					{},
 					"resume account",
 				)
-					.then(() => this.refreshAll({ preferredId: accountId }))
-					.then(() => {
-						this.openMessageBox({
-							tone: "success",
-							title: "Account resumed",
-							message: `${accountLabel} is active again.`,
-						});
-					})
-					.catch((error) => {
-						this.openMessageBox({
-							tone: "error",
-							title: "Resume failed",
-							message: error.message || "Failed to resume account.",
-						});
-					})
-					.finally(() => {
-						this.authDialog.isLoading = false;
+						.then(() => this.refreshAll({ preferredId: accountId }))
+						.then(() => {
+							this.openToast({
+								tone: "success",
+								message: `${accountLabel} is active again.`,
+							});
+						})
+						.catch((error) => {
+							this.openToast({
+								tone: "error",
+								message: error.message || "Failed to resume account.",
+								timeoutMs: 8000,
+							});
+						})
+						.finally(() => {
+							this.authDialog.isLoading = false;
 					});
 			},
 			async resumeSelectedAccount() {
 				return this.resumeAccount(this.selectedAccount.id);
 			},
-			async pauseSelectedAccount() {
-				const accountId = this.selectedAccount.id;
-				if (!accountId) {
-					this.openMessageBox({
-						tone: "warning",
-						title: "No account selected",
-						message: "Select an account before pausing.",
-					});
-					return;
-				}
-				const accountLabel = formatAccountLabel(accountId, this.accounts.rows);
-				const confirmed = await this.openConfirmBox({
+				async pauseSelectedAccount() {
+					const accountId = this.selectedAccount.id;
+					if (!accountId) {
+						this.openToast({
+							tone: "warning",
+							message: "Select an account before pausing.",
+							timeoutMs: 6000,
+						});
+						return;
+					}
+					const accountLabel = formatAccountLabel(accountId, this.accounts.rows);
+					const confirmed = await this.openConfirmBox({
 					title: "Pause account?",
 					message: `Pause account ${accountLabel}? Routing will skip it until resumed.`,
 					confirmLabel: "Pause",
@@ -3003,38 +3101,37 @@
 					return;
 				}
 				this.authDialog.isLoading = true;
-				postJson(API_ENDPOINTS.accountPause(accountId), {}, "pause account")
-					.then(() => this.refreshAll({ preferredId: accountId }))
-					.then(() => {
-						this.openMessageBox({
-							tone: "success",
-							title: "Account paused",
-							message: `${accountLabel} paused.`,
-						});
-					})
-					.catch((error) => {
-						this.openMessageBox({
-							tone: "error",
-							title: "Pause failed",
-							message: error.message || "Failed to pause account.",
-						});
-					})
-					.finally(() => {
-						this.authDialog.isLoading = false;
+					postJson(API_ENDPOINTS.accountPause(accountId), {}, "pause account")
+						.then(() => this.refreshAll({ preferredId: accountId }))
+						.then(() => {
+							this.openToast({
+								tone: "success",
+								message: `${accountLabel} paused.`,
+							});
+						})
+						.catch((error) => {
+							this.openToast({
+								tone: "error",
+								message: error.message || "Failed to pause account.",
+								timeoutMs: 8000,
+							});
+						})
+						.finally(() => {
+							this.authDialog.isLoading = false;
 					});
 			},
-			async deleteSelectedAccount() {
-				const accountId = this.selectedAccount.id;
-				if (!accountId) {
-					this.openMessageBox({
-						tone: "warning",
-						title: "No account selected",
-						message: "Select an account before deleting.",
-					});
-					return;
-				}
-				const accountLabel = formatAccountLabel(accountId, this.accounts.rows);
-				const confirmed = await this.openConfirmBox({
+				async deleteSelectedAccount() {
+					const accountId = this.selectedAccount.id;
+					if (!accountId) {
+						this.openToast({
+							tone: "warning",
+							message: "Select an account before deleting.",
+							timeoutMs: 6000,
+						});
+						return;
+					}
+					const accountLabel = formatAccountLabel(accountId, this.accounts.rows);
+					const confirmed = await this.openConfirmBox({
 					title: "Delete account?",
 					message: `Delete account ${accountLabel}? This cannot be undone.`,
 					confirmLabel: "Delete",
@@ -3047,21 +3144,20 @@
 					await deleteJson(
 						API_ENDPOINTS.accountDelete(accountId),
 						"delete account",
-					);
-					await this.refreshAll({ preferredId: "" });
-					this.openMessageBox({
-						tone: "success",
-						title: "Account deleted",
-						message: `${accountLabel} removed.`,
-					});
-				} catch (error) {
-					this.openMessageBox({
-						tone: "error",
-						title: "Delete failed",
-						message: error.message || "Failed to delete account.",
-					});
-				}
-			},
+						);
+						await this.refreshAll({ preferredId: "" });
+						this.openToast({
+							tone: "success",
+							message: `${accountLabel} removed.`,
+						});
+					} catch (error) {
+						this.openToast({
+							tone: "error",
+							message: error.message || "Failed to delete account.",
+							timeoutMs: 8000,
+						});
+					}
+				},
 			statusBadgeText,
 			statusLabel,
 			requestStatusLabel,

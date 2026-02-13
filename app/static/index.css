@@ -1280,6 +1280,107 @@ button {
   transform: translate(-50%, -50%) scale(1);
 }
 
+.toast-stack {
+  /* Snackbar placement (Gmail-style): bottom-left, non-blocking. */
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.35);
+  max-width: min(520px, calc(100vw - 40px));
+  border-left: 4px solid var(--accent-primary);
+}
+
+.toast.is-success {
+  border-left-color: #22c55e;
+}
+
+.toast.is-warning {
+  border-left-color: #f59e0b;
+}
+
+.toast.is-error {
+  border-left-color: #ef4444;
+}
+
+.toast__message {
+  color: var(--text-main);
+  font-size: 14px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.toast__action {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toast__action:hover {
+  background: var(--bg-surface);
+  border-color: var(--text-muted);
+}
+
+.toast__dismiss {
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  position: relative;
+  border-radius: 8px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.toast__dismiss:hover {
+  background: var(--bg-surface);
+  color: var(--text-main);
+}
+
+.toast__dismiss::before,
+.toast__dismiss::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 1.5px;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.toast__dismiss::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
 .window-body {
   padding: 20px;
 }
