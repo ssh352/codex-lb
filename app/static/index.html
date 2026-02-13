@@ -579,6 +579,19 @@
               </div>
             </fieldset>
 
+            <fieldset class="settings-fieldset">
+              <legend>Daily work pace</legend>
+              <label for="dashboard-work-hours-per-day">Work hours per day you can actively drive usage:</label>
+              <div style="margin-top: 6px">
+                <input id="dashboard-work-hours-per-day" type="number" min="0.1" max="24" step="0.25"
+                  x-model.number="work.workHoursPerDay" style="width: 90px">
+                <span class="text-muted">Used to compute “credits/min” targets so you can finish quota before the 7d reset.</span>
+              </div>
+              <div class="text-muted" style="margin-top: 6px">
+                Saved locally in your browser (no server update).
+              </div>
+            </fieldset>
+
             <div class="inline-actions" style="margin-top: 12px">
               <button type="button" @click="saveSettings" :disabled="settings.isLoading || settings.isSaving || !settings.hasLoaded">
                 <span>Save</span>
