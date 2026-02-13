@@ -103,6 +103,7 @@ def summarize_usage_window(
     account_map: Mapping[str, Account],
     window: str,
 ) -> UsageWindowSummary:
+    window_key = _normalize_window_key(window)
     total_capacity = 0.0
     total_used = 0.0
     reset_candidates: list[int] = []
@@ -122,7 +123,11 @@ def summarize_usage_window(
         total_used += (capacity * float(row.used_percent)) / 100.0
 
     if window_minutes is None:
-        window_minutes = default_window_minutes(window)
+        window_minutes = default_window_minutes(window_key)
+
+    window_minutes = _sanitize_window_minutes(window_key, window_minutes)
+    if window_minutes is None:
+        window_minutes = default_window_minutes(window_key)
 
     overall = None
     if total_capacity > 0:
@@ -135,6 +140,26 @@ def summarize_usage_window(
         reset_at=reset_at_value,
         window_minutes=window_minutes,
     )
+
+
+def _sanitize_window_minutes(window_key: str, window_minutes: int | None) -> int | None:
+    if window_minutes is None:
+        return None
+    if window_minutes <= 0:
+        return None
+
+    # Window sizes are expected to be stable per key. Occasionally upstream or persisted
+    # telemetry can contain incorrect window durations; clamp clearly-invalid values back
+    # to the known defaults so dashboards and routing logic remain coherent.
+    if window_key == "primary":
+        # Primary windows should be measured in hours, not days.
+        if window_minutes < 15 or window_minutes > (24 * 60):
+            return default_window_minutes("primary")
+    elif window_key == "secondary":
+        # Secondary windows should be measured in days, not minutes/hours.
+        if window_minutes < (24 * 60) or window_minutes > (60 * 24 * 60):
+            return default_window_minutes("secondary")
+    return window_minutes
 
 
 def capacity_for_plan(plan_type: str | None, window: str) -> float | None:

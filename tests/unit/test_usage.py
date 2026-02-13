@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from app.core.usage import (
     capacity_for_plan,
     normalize_usage_window,
+    summarize_usage_window,
     used_credits_from_percent,
 )
-from app.core.usage.types import UsageWindowSummary
+from app.core.usage.types import UsageWindowRow, UsageWindowSummary
+from app.db.models import Account, AccountStatus
 
 pytestmark = pytest.mark.unit
 
@@ -36,3 +40,47 @@ def test_capacity_for_plan():
     assert capacity_for_plan("plus", "7d") is not None
     assert capacity_for_plan("free", "7d") == 180.0
     assert capacity_for_plan("unknown", "5h") is None
+
+
+def test_summarize_usage_window_clamps_primary_window_minutes_to_hours():
+    account = Account(
+        id="acc_usage_primary",
+        email="primary@example.com",
+        plan_type="plus",
+        access_token_encrypted=b"x",
+        refresh_token_encrypted=b"x",
+        id_token_encrypted=b"x",
+        last_refresh=datetime.now(timezone.utc),
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+    row = UsageWindowRow(
+        account_id=account.id,
+        used_percent=10.0,
+        reset_at=123,
+        window_minutes=10080,  # bogus (7d) for primary
+    )
+    summary = summarize_usage_window([row], {account.id: account}, "primary")
+    assert summary.window_minutes == 300
+
+
+def test_summarize_usage_window_clamps_secondary_window_minutes_to_days():
+    account = Account(
+        id="acc_usage_secondary",
+        email="secondary@example.com",
+        plan_type="plus",
+        access_token_encrypted=b"x",
+        refresh_token_encrypted=b"x",
+        id_token_encrypted=b"x",
+        last_refresh=datetime.now(timezone.utc),
+        status=AccountStatus.ACTIVE,
+        deactivation_reason=None,
+    )
+    row = UsageWindowRow(
+        account_id=account.id,
+        used_percent=10.0,
+        reset_at=123,
+        window_minutes=300,  # bogus (5h) for secondary
+    )
+    summary = summarize_usage_window([row], {account.id: account}, "secondary")
+    assert summary.window_minutes == 10080
