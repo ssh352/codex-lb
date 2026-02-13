@@ -9,7 +9,7 @@
   <link rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;32&quot; height=&quot;32&quot; fill=&quot;none&quot; viewBox=&quot;0 0 32 32&quot;%3E%3Cpath stroke=&quot;%23000&quot; stroke-linecap=&quot;round&quot; stroke-width=&quot;2.484&quot; d=&quot;M22.356 19.797H17.17M9.662 12.29l1.979 3.576a.511.511 0 0 1-.005.504l-1.974 3.409M30.758 16c0 8.15-6.607 14.758-14.758 14.758-8.15 0-14.758-6.607-14.758-14.758C1.242 7.85 7.85 1.242 16 1.242c8.15 0 14.758 6.608 14.758 14.758Z&quot;/%3E%3C/svg%3E"
     type="image/svg+xml">
-  <link rel="stylesheet" href="/dashboard/index.css">
+  <link rel="stylesheet" href="/dashboard/index.css?v=__ASSET_VERSION__">
 </head>
 
 <body class="has-scrollbar" x-data="feApp" :data-theme="theme" x-init="init()" x-cloak>
@@ -396,11 +396,11 @@
 	                        <input type="checkbox" aria-label="Select all filtered accounts"
 	                          @click.stop="toggleAllFilteredAccounts">
 	                      </th>
-	                      <th class="highlighted indicator sortable" style="width: 28%" @click="setAccountsSort('email')">
+	                      <th class="highlighted indicator sortable" style="width: 36%" @click="setAccountsSort('email')">
 	                        <span>Email</span>
 	                        <span class="sort-indicator" x-text="sortIndicator('email')"></span>
 	                      </th>
-	                      <th class="sortable" style="width: 18%" @click="setAccountsSort('id')">
+	                      <th class="sortable accounts-id-col" style="width: 88px" @click="setAccountsSort('id')">
 	                        <span>ID</span>
 	                        <span class="sort-indicator" x-text="sortIndicator('id')"></span>
 	                      </th>
@@ -445,10 +445,12 @@
 	                            @click.stop="toggleAccountSelection(account.id, $event)">
 	                        </td>
 	                        <td class="cell-truncate" x-text="account.email" :title="account.email"></td>
-	                        <td class="cell-truncate">
-	                          <span x-text="formatAccountIdShort(account.id)" :title="account.id"></span>
-	                          <button type="button" class="copy-button" title="Copy account ID"
-	                            @click.stop="copyText(account.id, 'Copied account ID')">Copy</button>
+	                        <td class="accounts-id-col">
+                            <div class="account-id-cell">
+	                            <span class="account-id-short" x-text="formatAccountIdShort(account.id)" :title="account.id"></span>
+	                            <button type="button" class="copy-button" title="Copy account ID" aria-label="Copy account ID"
+	                              @click.stop="copyText(account.id, 'Copied account ID')">⧉</button>
+                            </div>
 	                        </td>
 	                        <td x-text="planLabel(account.plan)"></td>
 	                        <td>
@@ -770,11 +772,11 @@
 	  </div>
 	  </main>
 	  </div>
-  <script defer src="/dashboard/selection_utils.js"></script>
-  <script defer src="/dashboard/ui_utils.js"></script>
-  <script defer src="/dashboard/state_defaults.js"></script>
-  <script defer src="/dashboard/sort_utils.js"></script>
-  <script defer src="/dashboard/index.js"></script>
+  <script defer src="/dashboard/selection_utils.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/dashboard/ui_utils.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/dashboard/state_defaults.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/dashboard/sort_utils.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/dashboard/index.js?v=__ASSET_VERSION__"></script>
   <script defer src="https://unpkg.com/alpinejs@3.13.2/dist/cdn.min.js"></script>
 </body>
 

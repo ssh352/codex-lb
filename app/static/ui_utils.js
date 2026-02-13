@@ -13,16 +13,13 @@
 		if (!raw) {
 			return "";
 		}
-		if (raw.length <= 16) {
+		if (raw.length <= 3) {
 			return raw;
 		}
-		const head = raw.slice(0, 8);
-		const tail = raw.slice(-4);
-		return `${head}…${tail}`;
+		return raw.slice(0, 3);
 	};
 
 	return {
 		formatAccountIdShort,
 	};
 });
-

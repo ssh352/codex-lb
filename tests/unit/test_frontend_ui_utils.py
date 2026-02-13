@@ -37,7 +37,5 @@ process.stdout.write(JSON.stringify({
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
     assert payload["empty"] == ""
-    assert payload["short"] == "acc_short"
-    assert payload["long"].startswith("acc_1234")
-    assert payload["long"].endswith("cdef")
-    assert "…" in payload["long"]
+    assert payload["short"] == "acc"
+    assert payload["long"] == "acc"

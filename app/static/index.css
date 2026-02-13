@@ -619,14 +619,39 @@ body[data-theme="light"] {
 }
 
 .copy-button {
-  margin-left: 8px;
-  padding: 2px 6px;
+  margin-left: 0;
+  width: 26px;
+  height: 22px;
+  padding: 0;
   font-size: 11px;
   border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+.accounts-id-col {
+  width: 88px;
+}
+
+.account-id-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.account-id-short {
+  flex: 0 0 3ch;
+  width: 3ch;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 .copy-button:hover {

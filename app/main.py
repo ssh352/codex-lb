@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from hashlib import sha256
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
@@ -28,8 +29,39 @@ from app.modules.settings import api as settings_api
 from app.modules.usage import api as usage_api
 
 
+def _compute_dashboard_asset_version(static_dir: Path) -> str:
+    asset_names = (
+        "index.css",
+        "selection_utils.js",
+        "ui_utils.js",
+        "state_defaults.js",
+        "sort_utils.js",
+        "index.js",
+    )
+    digest = sha256()
+    for name in asset_names:
+        digest.update((static_dir / name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
+def _render_dashboard_index(index_html: Path, asset_version: str) -> str:
+    html = index_html.read_text(encoding="utf-8")
+    return html.replace("__ASSET_VERSION__", asset_version)
+
+
 class DashboardStaticFiles(StaticFiles):
+    def __init__(self, directory: Path, *, asset_version: str, html: bool = True) -> None:
+        super().__init__(directory=str(directory), html=html)
+        self._asset_version = asset_version
+        self._static_dir = directory
+
     async def get_response(self, path: str, scope) -> Response:
+        if path in {"", ".", "index.html"}:
+            index_html = self._static_dir / "index.html"
+            rendered = _render_dashboard_index(index_html, self._asset_version)
+            response = Response(rendered, media_type="text/html")
+            response.headers["Cache-Control"] = "no-cache"
+            return response
         response = await super().get_response(path, scope)
         response.headers["Cache-Control"] = "no-cache"
         return response
@@ -76,6 +108,13 @@ def create_app() -> FastAPI:
 
     static_dir = Path(__file__).parent / "static"
     index_html = static_dir / "index.html"
+    asset_version = _compute_dashboard_asset_version(static_dir)
+
+    def _dashboard_index_response() -> Response:
+        rendered = _render_dashboard_index(index_html, asset_version)
+        response = Response(rendered, media_type="text/html")
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @app.get("/", include_in_schema=False)
     async def root_redirect():
@@ -83,13 +122,17 @@ def create_app() -> FastAPI:
 
     @app.get("/accounts", include_in_schema=False)
     async def spa_accounts():
-        return FileResponse(index_html, media_type="text/html")
+        return _dashboard_index_response()
 
     @app.get("/settings", include_in_schema=False)
     async def spa_settings():
-        return FileResponse(index_html, media_type="text/html")
+        return _dashboard_index_response()
 
-    app.mount("/dashboard", DashboardStaticFiles(directory=static_dir, html=True), name="dashboard")
+    app.mount(
+        "/dashboard",
+        DashboardStaticFiles(directory=static_dir, html=True, asset_version=asset_version),
+        name="dashboard",
+    )
 
     return app
 
