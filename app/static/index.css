@@ -598,6 +598,42 @@ body[data-theme="light"] {
   background: var(--accent-primary-hover);
 }
 
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sort-indicator {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.copy-button {
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-main);
+}
+
 .controls-toolbar {
   display: flex;
   flex-wrap: wrap;

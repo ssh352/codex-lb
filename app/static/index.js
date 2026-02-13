@@ -665,6 +665,7 @@
 			email,
 			plan: account.planType,
 			status: normalizeAccountStatus(account.status),
+			pinned: Boolean(account.pinned),
 			usage: {
 				primaryRemainingPercent: toNumber(usage.primaryRemainingPercent) ?? 0,
 				secondaryRemainingPercent:
@@ -1465,6 +1466,9 @@
 
 	const normalizeSettingsPayload = (payload) => ({
 		preferEarlierResetAccounts: Boolean(payload?.preferEarlierResetAccounts),
+		pinnedAccountIds: Array.isArray(payload?.pinnedAccountIds)
+			? payload.pinnedAccountIds.map(String).filter(Boolean)
+			: [],
 	});
 
 	const fetchSettings = async () => {
@@ -1473,6 +1477,25 @@
 	};
 
 	const registerApp = () => {
+		const Selection = globalThis.CodexLbSelection;
+		if (!Selection || typeof Selection.nextSelection !== "function") {
+			throw new Error("selection_utils.js must be loaded before index.js");
+		}
+		const UiUtils = globalThis.CodexLbUiUtils;
+		if (!UiUtils || typeof UiUtils.formatAccountIdShort !== "function") {
+			throw new Error("ui_utils.js must be loaded before index.js");
+		}
+		const StateDefaults = globalThis.CodexLbStateDefaults;
+		if (
+			!StateDefaults ||
+			typeof StateDefaults.createDefaultAccountsState !== "function"
+		) {
+			throw new Error("state_defaults.js must be loaded before index.js");
+		}
+		const SortUtils = globalThis.CodexLbSortUtils;
+		if (!SortUtils || typeof SortUtils.sortAccounts !== "function") {
+			throw new Error("sort_utils.js must be loaded before index.js");
+		}
 		const initialAutoRefresh = loadAutoRefreshPreferences();
 		Alpine.data("feApp", () => ({
 			view: "dashboard",
@@ -1502,15 +1525,12 @@
 
 			settings: {
 				preferEarlierResetAccounts: false,
+				pinnedAccountIds: [],
 				isLoading: false,
 				isSaving: false,
 				hasLoaded: false,
 			},
-			accounts: {
-				selectedId: "",
-				rows: [],
-				searchQuery: "",
-			},
+			accounts: StateDefaults.createDefaultAccountsState(),
 			importState: {
 				isLoading: false,
 				fileName: "",
@@ -1729,6 +1749,7 @@
 						const settings = await fetchSettings();
 						this.settings.preferEarlierResetAccounts =
 							settings.preferEarlierResetAccounts;
+						this.settings.pinnedAccountIds = settings.pinnedAccountIds || [];
 						this.settings.hasLoaded = true;
 					} catch (err) {
 						console.error("Failed to load settings:", err);
@@ -1914,8 +1935,18 @@
 					)
 				) {
 					this.accounts.selectedId = this.accounts.rows[0]?.id || "";
-				} else if (!this.accounts.selectedId && this.accounts.rows.length > 0) {
-						this.accounts.selectedId = this.accounts.rows[0].id;
+					} else if (!this.accounts.selectedId && this.accounts.rows.length > 0) {
+							this.accounts.selectedId = this.accounts.rows[0].id;
+						}
+					const reconciled = Selection.reconcileSelection({
+						existingIds: this.accounts.rows.map((account) => account.id),
+						selectedIds: this.accounts.selectedIds,
+						anchorId: this.accounts.selectionAnchorId,
+					});
+					this.accounts.selectedIds = reconciled.selectedIds;
+					this.accounts.selectionAnchorId = reconciled.anchorId;
+					if (this.accounts.selectedIds.length === 1) {
+						this.accounts.selectionAnchorId = this.accounts.selectedIds[0];
 					}
 						this.dashboardData = buildDashboardDataFromApi({
 							summary: data.summary,
@@ -1951,6 +1982,7 @@
 							const normalized = normalizeSettingsPayload(updated);
 							this.settings.preferEarlierResetAccounts =
 								normalized.preferEarlierResetAccounts;
+							this.settings.pinnedAccountIds = normalized.pinnedAccountIds || [];
 						this.openMessageBox({
 							tone: "success",
 							title: "Settings saved",
@@ -2431,15 +2463,16 @@
 						? `${normalizedSeconds}s`
 						: "paused";
 
-				const items =
-					this.view === "accounts"
-						? [
-							`Selection: ${this.accounts.selectedId || "--"}`,
-							`Last sync: ${lastSyncLabel}`,
-							`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
-							`Auto-refresh: ${autoRefreshLabel}`,
-						]
-						: [
+					const items =
+						this.view === "accounts"
+							? [
+								`Selected: ${this.accounts.selectedIds.length || 0}`,
+								`Rotation: ${this.dashboardData.routing?.rotationEnabled ? "enabled" : "disabled"}`,
+								`Last sync: ${lastSyncLabel}`,
+								`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
+								`Auto-refresh: ${autoRefreshLabel}`,
+							]
+							: [
 							`Last sync: ${lastSyncLabel}`,
 							`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
 							`Backend: ${this.backendPath}`,
@@ -2453,10 +2486,16 @@
 				return items;
 			},
 			get filteredAccounts() {
-				return filterAccountsByQuery(
+				const filtered = filterAccountsByQuery(
 					this.accounts.rows,
 					this.accounts.searchQuery,
 				);
+				return this.sortAccounts(filtered);
+			},
+			get selectedAccountIds() {
+				return Array.isArray(this.accounts.selectedIds)
+					? this.accounts.selectedIds.filter(Boolean)
+					: [];
 			},
 			get selectedAccount() {
 				return (
@@ -2467,8 +2506,270 @@
 					{}
 				);
 			},
-			selectAccount(id) {
-				this.accounts.selectedId = id;
+			isAccountSelected(accountId) {
+				return this.selectedAccountIds.includes(accountId);
+			},
+			clearAccountSelection() {
+				this.accounts.selectedIds = [];
+				this.accounts.selectionAnchorId = "";
+			},
+			_orderedAccountIds() {
+				return (this.filteredAccounts || []).map((account) => account.id).filter(Boolean);
+			},
+			setAccountsSort(key) {
+				const nextKey = String(key || "").trim();
+				if (!nextKey) {
+					return;
+				}
+				if (this.accounts.sortKey === nextKey) {
+					this.accounts.sortDirection =
+						this.accounts.sortDirection === "asc" ? "desc" : "asc";
+					return;
+				}
+				this.accounts.sortKey = nextKey;
+				this.accounts.sortDirection = "asc";
+			},
+			sortIndicator(key) {
+				if (this.accounts.sortKey !== key) {
+					return "";
+				}
+				return this.accounts.sortDirection === "asc" ? "↑" : "↓";
+			},
+			sortAccounts(accounts) {
+				return SortUtils.sortAccounts(accounts, {
+					sortKey: this.accounts.sortKey,
+					sortDirection: this.accounts.sortDirection,
+				});
+			},
+			selectAccount(accountId, event) {
+				const result = Selection.nextSelection({
+					orderedIds: this._orderedAccountIds(),
+					clickedId: accountId,
+					selectedIds: this.accounts.selectedIds,
+					anchorId: this.accounts.selectionAnchorId || this.accounts.selectedId,
+					shift: Boolean(event?.shiftKey),
+					ctrl: Boolean(event?.ctrlKey),
+					meta: Boolean(event?.metaKey),
+				});
+				this.accounts.selectedIds = result.selectedIds;
+				this.accounts.selectionAnchorId = result.anchorId || this.accounts.selectionAnchorId;
+				this.accounts.selectedId = accountId;
+			},
+			toggleAccountSelection(accountId, event) {
+				const result = Selection.nextSelection({
+					orderedIds: this._orderedAccountIds(),
+					clickedId: accountId,
+					selectedIds: this.accounts.selectedIds,
+					anchorId: this.accounts.selectionAnchorId || this.accounts.selectedId,
+					shift: Boolean(event?.shiftKey),
+					ctrl: true,
+					meta: false,
+				});
+				this.accounts.selectedIds = result.selectedIds;
+				this.accounts.selectionAnchorId = result.anchorId || this.accounts.selectionAnchorId;
+				this.accounts.selectedId = accountId;
+			},
+			toggleAllFilteredAccounts() {
+				const ids = (this.filteredAccounts || []).map((account) => account.id).filter(Boolean);
+				if (!ids.length) {
+					this.clearAccountSelection();
+					return;
+				}
+				const selected = new Set(this.selectedAccountIds);
+				const allSelected = ids.every((id) => selected.has(id));
+				this.accounts.selectedIds = allSelected ? [] : ids;
+				if (!allSelected && ids[0]) {
+					this.accounts.selectionAnchorId = ids[0];
+					this.accounts.selectedId = ids[0];
+				}
+			},
+			async _bulkCall(ids, actionLabel, fn) {
+				const accountIds = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
+				if (!accountIds.length) {
+					this.openMessageBox({
+						tone: "warning",
+						title: "No accounts selected",
+						message: "Select one or more accounts first.",
+					});
+					return;
+				}
+				this.authDialog.isLoading = true;
+				const failures = [];
+				for (const accountId of accountIds) {
+					try {
+						await fn(accountId);
+					} catch (error) {
+						failures.push({
+							accountId,
+							message: error?.message || "Request failed",
+						});
+					}
+				}
+				try {
+					await this.refreshAll({ preferredId: this.accounts.selectedId || "" });
+				} finally {
+					this.authDialog.isLoading = false;
+				}
+				if (!failures.length) {
+					this.openMessageBox({
+						tone: "success",
+						title: "Done",
+						message: `${actionLabel} applied to ${accountIds.length} account(s).`,
+					});
+					return;
+				}
+				const details = failures.map((entry) => `${entry.accountId}: ${entry.message}`).join("\n");
+				this.openMessageBox({
+					tone: "warning",
+					title: "Partial success",
+					message: `${actionLabel} applied with ${failures.length} failure(s).`,
+					details,
+				});
+			},
+			async pauseSelectedAccounts() {
+				const ids = this.selectedAccountIds;
+				return this._bulkCall(ids, "Pause", (accountId) =>
+					postJson(API_ENDPOINTS.accountPause(accountId), {}, "pause account"),
+				);
+			},
+			async resumeSelectedAccounts() {
+				const ids = this.selectedAccountIds;
+				return this._bulkCall(ids, "Resume", (accountId) =>
+					postJson(API_ENDPOINTS.accountReactivate(accountId), {}, "resume account"),
+				);
+			},
+			async deleteSelectedAccounts() {
+				const ids = this.selectedAccountIds;
+				if (!ids.length) {
+					return this.openMessageBox({
+						tone: "warning",
+						title: "No accounts selected",
+						message: "Select one or more accounts before deleting.",
+					});
+				}
+				const confirmed = await this.openConfirmBox({
+					title: "Delete accounts?",
+					message: `Delete ${ids.length} account(s)? This cannot be undone.`,
+					confirmLabel: "Delete",
+					cancelLabel: "Cancel",
+				});
+				if (!confirmed) {
+					return;
+				}
+				return this._bulkCall(ids, "Delete", (accountId) =>
+					deleteJson(API_ENDPOINTS.accountDelete(accountId), "delete account"),
+				);
+			},
+			async _updateRoutingPool(mutator, actionLabel) {
+				this.settings.isSaving = true;
+				try {
+					const current = await fetchSettings();
+					const currentSet = new Set(current.pinnedAccountIds || []);
+					const nextSet = mutator(currentSet);
+					const next = Array.from(nextSet);
+					const updated = await putJson(
+						API_ENDPOINTS.settings,
+						{
+							preferEarlierResetAccounts: current.preferEarlierResetAccounts,
+							pinnedAccountIds: next,
+						},
+						actionLabel,
+					);
+					const normalized = normalizeSettingsPayload(updated);
+					this.settings.preferEarlierResetAccounts =
+						normalized.preferEarlierResetAccounts;
+					this.settings.pinnedAccountIds = normalized.pinnedAccountIds;
+					await this.refreshAll({ preferredId: this.accounts.selectedId || "" });
+					this.openMessageBox({
+						tone: "success",
+						title: "Routing pool updated",
+						message: "Pinned accounts updated.",
+					});
+				} catch (error) {
+					this.openMessageBox({
+						tone: "error",
+						title: "Routing pool update failed",
+						message: error?.message || "Failed to update routing pool.",
+					});
+				} finally {
+					this.settings.isSaving = false;
+				}
+			},
+			async addSelectedAccountsToRoutingPool() {
+				const ids = this.selectedAccountIds;
+				if (!ids.length) {
+					return this.openMessageBox({
+						tone: "warning",
+						title: "No accounts selected",
+						message: "Select one or more accounts first.",
+					});
+				}
+				return this._updateRoutingPool(
+					(currentSet) => {
+						for (const id of ids) {
+							currentSet.add(id);
+						}
+						return currentSet;
+					},
+					"pin accounts",
+				);
+			},
+			async removeSelectedAccountsFromRoutingPool() {
+				const ids = this.selectedAccountIds;
+				if (!ids.length) {
+					return this.openMessageBox({
+						tone: "warning",
+						title: "No accounts selected",
+						message: "Select one or more accounts first.",
+					});
+				}
+				return this._updateRoutingPool(
+					(currentSet) => {
+						for (const id of ids) {
+							currentSet.delete(id);
+						}
+						return currentSet;
+					},
+					"unpin accounts",
+				);
+			},
+			async copyText(value, label = "Copied") {
+				const text = String(value ?? "");
+				if (!text) {
+					return;
+				}
+				const writeClipboard = async () => {
+					if (navigator?.clipboard?.writeText) {
+						await navigator.clipboard.writeText(text);
+						return;
+					}
+					const node = document.createElement("textarea");
+					node.value = text;
+					node.setAttribute("readonly", "true");
+					node.style.position = "fixed";
+					node.style.left = "-9999px";
+					document.body.appendChild(node);
+					node.select();
+					document.execCommand("copy");
+					document.body.removeChild(node);
+				};
+				try {
+					await writeClipboard();
+					this.openMessageBox({
+						tone: "success",
+						title: label,
+						message: text,
+					});
+				} catch (error) {
+					this.openMessageBox({
+						tone: "error",
+						title: "Copy failed",
+						message: error?.message || "Failed to copy to clipboard.",
+					});
+				}
+			},
+			formatAccountIdShort(value) {
+				return UiUtils.formatAccountIdShort(value);
 			},
 			handleAccountAction(action, card) {
 				if (!action || !card) {

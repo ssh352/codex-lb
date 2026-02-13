@@ -359,10 +359,10 @@
         </article>
 
         <article role="tabpanel" id="tab-accounts" :hidden="view !== 'accounts'">
-          <div class="two-column">
-            <div class="panel account-list-panel">
-              <h3>Account list</h3>
-              <div class="list-actions">
+	          <div class="two-column">
+	            <div class="panel account-list-panel">
+	              <h3>Account list</h3>
+	              <div class="list-actions">
                 <div class="searchbox">
                   <input type="search" placeholder="Search accounts" aria-label="Search accounts" x-ref="accountSearch"
                     x-model="accounts.searchQuery" @keydown.escape.prevent="clearAccountSearch">
@@ -374,44 +374,88 @@
                     @change="handleAuthImport($event)" :disabled="importState.isLoading">
                   Import auth.json
                 </label>
-                <button type="button" @click="openAddAccountDialog">Add account</button>
-              </div>
-              <div class="table-wrap table-wrap--column-lines has-scrollbar">
-                <table>
-                  <thead>
-                    <tr>
-                      <th class="highlighted indicator" style="width: 28%">Account ID</th>
-                      <th style="width: 25%">Email</th>
-                      <th style="width: 10%">Plan</th>
-                      <th style="width: 12%">Status</th>
-                      <th style="text-align: center; width: 12%">
-                        <span style="display: inline-flex; flex-direction: column; align-items: center">
-                          <span>Remaining</span>
-                          <span style="font-weight: normal; font-size: 0.9em; color: var(--text-muted)"
-                            x-text="`(${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`">
-                          </span>
-                        </span>
-                      </th>
-                      <th style="text-align: center; width: 13%">
-                        <span style="display: inline-flex; flex-direction: column; align-items: center">
-                          <span style="white-space: nowrap">Quota reset</span>
-                          <span style="font-weight: normal; font-size: 0.9em; color: var(--text-muted)"
-                            x-text="`(${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`">
-                          </span>
-                        </span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template x-for="account in filteredAccounts" :key="account.id">
-                      <tr :class="{ highlighted: account.id === accounts.selectedId }"
-                        @click="selectAccount(account.id)" style="cursor: pointer">
-                        <td class="cell-truncate" x-text="account.id" :title="account.id"></td>
-                        <td class="cell-truncate" x-text="account.email" :title="account.email"></td>
-                        <td x-text="planLabel(account.plan)"></td>
-                        <td><span class="status-pill" :class="account.status"
-                            x-text="statusLabel(account.status)"></span>
-                        </td>
+	                <button type="button" @click="openAddAccountDialog">Add account</button>
+	              </div>
+	              <div class="bulk-actions" x-show="selectedAccountIds.length > 0" x-transition.opacity>
+	                <div class="text-muted" x-text="`${selectedAccountIds.length} selected`"></div>
+	                <div class="inline-actions">
+	                  <button type="button" @click="addSelectedAccountsToRoutingPool">Pin</button>
+	                  <button type="button" @click="removeSelectedAccountsFromRoutingPool">Unpin</button>
+	                  <button type="button" @click="pauseSelectedAccounts">Pause</button>
+	                  <button type="button" @click="resumeSelectedAccounts">Resume</button>
+	                  <button type="button" @click="deleteSelectedAccounts">Delete</button>
+	                  <button type="button" @click="clearAccountSelection">Clear</button>
+	                </div>
+	              </div>
+	              <div class="table-wrap table-wrap--column-lines has-scrollbar">
+	                <table>
+	                  <thead>
+	                    <tr>
+	                      <th style="width: 4%; text-align: center">
+	                        <input type="checkbox" aria-label="Select all filtered accounts"
+	                          @click.stop="toggleAllFilteredAccounts">
+	                      </th>
+	                      <th class="highlighted indicator sortable" style="width: 28%" @click="setAccountsSort('email')">
+	                        <span>Email</span>
+	                        <span class="sort-indicator" x-text="sortIndicator('email')"></span>
+	                      </th>
+	                      <th class="sortable" style="width: 18%" @click="setAccountsSort('id')">
+	                        <span>ID</span>
+	                        <span class="sort-indicator" x-text="sortIndicator('id')"></span>
+	                      </th>
+	                      <th class="sortable" style="width: 10%" @click="setAccountsSort('plan')">
+	                        <span>Plan</span>
+	                        <span class="sort-indicator" x-text="sortIndicator('plan')"></span>
+	                      </th>
+	                      <th class="sortable" style="width: 12%" @click="setAccountsSort('status')">
+	                        <span>Status</span>
+	                        <span class="sort-indicator" x-text="sortIndicator('status')"></span>
+	                      </th>
+	                      <th style="text-align: center; width: 12%">
+	                        <span style="display: inline-flex; flex-direction: column; align-items: center">
+	                          <span class="sortable" @click.stop="setAccountsSort('remainingSecondaryPercent')">Remaining
+	                            <span class="sort-indicator" x-text="sortIndicator('remainingSecondaryPercent')"></span>
+	                          </span>
+	                          <span style="font-weight: normal; font-size: 0.9em; color: var(--text-muted)"
+	                            x-text="`(${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`">
+	                          </span>
+	                        </span>
+	                      </th>
+	                      <th style="text-align: center; width: 13%">
+	                        <span style="display: inline-flex; flex-direction: column; align-items: center">
+	                          <span class="sortable" style="white-space: nowrap" @click.stop="setAccountsSort('quotaResetSecondary')">Quota
+	                            reset
+	                            <span class="sort-indicator" x-text="sortIndicator('quotaResetSecondary')"></span>
+	                          </span>
+	                          <span style="font-weight: normal; font-size: 0.9em; color: var(--text-muted)"
+	                            x-text="`(${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`">
+	                          </span>
+	                        </span>
+	                      </th>
+	                    </tr>
+	                  </thead>
+	                  <tbody>
+	                    <template x-for="account in filteredAccounts" :key="account.id">
+	                      <tr :class="{ highlighted: isAccountSelected(account.id) }"
+	                        @click="selectAccount(account.id, $event)" style="cursor: pointer">
+	                        <td style="text-align: center">
+	                          <input type="checkbox" :checked="isAccountSelected(account.id)"
+	                            :aria-label="`Select ${account.displayName || account.email || account.id}`"
+	                            @click.stop="toggleAccountSelection(account.id, $event)">
+	                        </td>
+	                        <td class="cell-truncate" x-text="account.email" :title="account.email"></td>
+	                        <td class="cell-truncate">
+	                          <span x-text="formatAccountIdShort(account.id)" :title="account.id"></span>
+	                          <button type="button" class="copy-button" title="Copy account ID"
+	                            @click.stop="copyText(account.id, 'Copied account ID')">Copy</button>
+	                        </td>
+	                        <td x-text="planLabel(account.plan)"></td>
+	                        <td>
+	                          <span class="status-pill" :class="account.status" x-text="statusLabel(account.status)"></span>
+	                          <template x-if="account.pinned">
+	                            <span class="status-pill active" style="margin-left: 6px">Pinned</span>
+	                          </template>
+	                        </td>
                         <td style="text-align: center"
                           :class="calculateTextUsageTextClass(account.status, account.usage?.secondaryRemainingPercent)"
                           x-text="formatPercent(account.usage?.secondaryRemainingPercent)">
@@ -419,14 +463,14 @@
                         <td style="text-align: center" x-text="formatQuotaResetLabel(account.resetAtSecondary)"></td>
                       </tr>
                     </template>
-                    <template x-if="filteredAccounts.length === 0">
-                      <tr>
-                        <td colspan="6" class="text-muted" style="text-align: center">
-                          <span
-                            x-text="accounts.searchQuery ? 'No accounts match your search.' : 'No accounts available.'"></span>
-                        </td>
-                      </tr>
-                    </template>
+	                    <template x-if="filteredAccounts.length === 0">
+	                      <tr>
+	                        <td colspan="8" class="text-muted" style="text-align: center">
+	                          <span
+	                            x-text="accounts.searchQuery ? 'No accounts match your search.' : 'No accounts available.'"></span>
+	                        </td>
+	                      </tr>
+	                    </template>
                   </tbody>
                 </table>
               </div>
@@ -494,6 +538,12 @@
               </fieldset>
 
               <div class="inline-actions" style="margin-top: 12px">
+                <template x-if="selectedAccount.pinned">
+                  <button @click="removeSelectedAccountsFromRoutingPool">Unpin</button>
+                </template>
+                <template x-if="!selectedAccount.pinned">
+                  <button @click="addSelectedAccountsToRoutingPool">Pin</button>
+                </template>
                 <template x-if="selectedAccount.status === 'deactivated'">
                   <button @click="startReauthFlow">Re-authenticate</button>
                 </template>
@@ -702,6 +752,10 @@
   </div>
   </main>
   </div>
+  <script defer src="/dashboard/selection_utils.js"></script>
+  <script defer src="/dashboard/ui_utils.js"></script>
+  <script defer src="/dashboard/state_defaults.js"></script>
+  <script defer src="/dashboard/sort_utils.js"></script>
   <script defer src="/dashboard/index.js"></script>
   <script defer src="https://unpkg.com/alpinejs@3.13.2/dist/cdn.min.js"></script>
 </body>
