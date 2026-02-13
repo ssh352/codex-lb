@@ -28,6 +28,13 @@
   --status-paused-bg: rgba(59, 130, 246, 0.15);
   --status-paused-text: #60a5fa;
 
+  --plan-free-bg: rgba(161, 161, 170, 0.14);
+  --plan-free-text: #a1a1aa;
+  --plan-plus-bg: rgba(59, 130, 246, 0.18);
+  --plan-plus-text: #93c5fd;
+  --plan-pro-bg: rgba(168, 85, 247, 0.18);
+  --plan-pro-text: #d8b4fe;
+
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
 
@@ -62,6 +69,13 @@
 
   --status-paused-bg: #dbeafe;
   --status-paused-text: #2563eb;
+
+  --plan-free-bg: #f4f4f5;
+  --plan-free-text: #71717a;
+  --plan-plus-bg: #dbeafe;
+  --plan-plus-text: #1d4ed8;
+  --plan-pro-bg: #ede9fe;
+  --plan-pro-text: #6d28d9;
 
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
@@ -441,6 +455,35 @@ body[data-theme="light"] {
 .status-pill.paused {
   background: var(--status-paused-bg);
   color: var(--status-paused-text);
+}
+
+.plan-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.plan-pill.plan-free {
+  background: var(--plan-free-bg);
+  color: var(--plan-free-text);
+}
+
+.plan-pill.plan-plus {
+  background: var(--plan-plus-bg);
+  color: var(--plan-plus-text);
+}
+
+.plan-pill.plan-pro {
+  background: var(--plan-pro-bg);
+  color: var(--plan-pro-text);
 }
 
 .badge-row {

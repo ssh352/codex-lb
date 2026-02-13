@@ -580,8 +580,19 @@
 	const titleCase = (value) =>
 		value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : "";
 	const planLabel = (plan) => {
+		if (plan === null || plan === undefined) {
+			return "Unknown";
+		}
+		const value = String(plan).trim();
+		if (!value) {
+			return "Unknown";
+		}
+		const normalized = normalizePlanType(value);
+		return normalized ? titleCase(normalized) : value;
+	};
+	const planPillClass = (plan) => {
 		const normalized = normalizePlanType(plan);
-		return normalized ? titleCase(normalized) : "Unknown";
+		return normalized ? `plan-${normalized}` : "plan-unknown";
 	};
 	const routingLabel = (strategy) => ROUTING_LABELS[strategy] || "unknown";
 	const errorLabel = (code) => ERROR_LABELS[code] || "--";
@@ -3195,6 +3206,7 @@
 			calculateTextUsageTextClass,
 			progressClass,
 			planLabel,
+			planPillClass,
 			routingLabel,
 			errorLabel,
 			formatNumber,

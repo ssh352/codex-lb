@@ -452,7 +452,11 @@
 	                              @click.stop="copyText(account.id, 'Copied account ID')">⧉</button>
                             </div>
 	                        </td>
-	                        <td x-text="planLabel(account.plan)"></td>
+	                        <td>
+	                          <span class="plan-pill" :class="planPillClass(account.plan)" :title="planLabel(account.plan)">
+	                            <span class="plan-pill__name" x-text="planLabel(account.plan)"></span>
+	                          </span>
+	                        </td>
 	                        <td>
 	                          <span class="status-pill" :class="account.status" x-text="statusLabel(account.status)"></span>
 	                          <template x-if="account.pinned">
@@ -486,7 +490,14 @@
 	                </div>
 	                <div><span>Account ID</span><strong x-text="selectedAccount.id" :title="selectedAccount.id"></strong>
 	                </div>
-	                <div><span>Plan</span><strong x-text="planLabel(selectedAccount.plan)"></strong></div>
+	                <div>
+	                  <span>Plan</span>
+	                  <strong>
+	                    <span class="plan-pill" :class="planPillClass(selectedAccount.plan)" :title="planLabel(selectedAccount.plan)">
+	                      <span class="plan-pill__name" x-text="planLabel(selectedAccount.plan)"></span>
+	                    </span>
+	                  </strong>
+	                </div>
 	                <div>
 	                  <span>Status</span>
 	                  <span class="status-pill" :class="selectedAccount.status"
