@@ -41,4 +41,3 @@ process.stdout.write(JSON.stringify({
     assert payload["long"].startswith("acc_1234")
     assert payload["long"].endswith("cdef")
     assert "…" in payload["long"]
-

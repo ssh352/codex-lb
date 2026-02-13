@@ -16,6 +16,7 @@ PERMANENT_FAILURE_CODES = {
     "account_deleted": "Account has been deleted",
 }
 
+
 @dataclass
 class AccountState:
     account_id: str

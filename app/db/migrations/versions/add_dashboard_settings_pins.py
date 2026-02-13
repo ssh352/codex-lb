@@ -19,4 +19,3 @@ async def run(session: AsyncSession) -> None:
     if not has_table or has_column:
         return
     await session.execute(text("ALTER TABLE dashboard_settings ADD COLUMN pinned_account_ids_json TEXT"))
-

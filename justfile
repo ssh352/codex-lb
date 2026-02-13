@@ -1,4 +1,4 @@
-check: lint type fe-check test
+check: lint format-check type fe-check test
 
 test:
     uv run --group dev pytest
@@ -9,6 +9,12 @@ ci: check
 
 lint:
     uv run --group dev ruff check .
+
+format:
+    uv run --group dev ruff format .
+
+format-check:
+    uv run --group dev ruff format --check .
 
 type:
     uv run --group dev pyright
