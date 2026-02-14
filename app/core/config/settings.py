@@ -111,6 +111,17 @@ class Settings(BaseSettings):
     http_client_connector_limit_per_host: int = Field(default=0, ge=0)
     http_client_keepalive_timeout_seconds: float = Field(default=30.0, gt=0)
     http_client_dns_cache_ttl_seconds: int = Field(default=300, ge=0)
+    # Startup logging (debugging).
+    #
+    # Disabled by default:
+    # - Noisy: each process start would dump a large config/env snapshot to logs.
+    # - Safety: even with redaction, logging env/config increases the risk of accidental secret exposure
+    #   (e.g. when log sinks are shared).
+    #
+    # When enabled, logs the resolved Settings values (and optionally a small env allowlist)
+    # at process start. Values that may contain secrets are redacted.
+    startup_log_config: bool = False
+    startup_log_env: bool = False
 
     @field_validator("database_url")
     @classmethod

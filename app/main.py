@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
 from app.core.clients.http import close_http_client, init_http_client
+from app.core.config.startup_log import log_startup_config
 from app.core.handlers import add_exception_handlers
 from app.core.middleware import (
     add_api_unhandled_error_middleware,
@@ -69,6 +70,7 @@ class DashboardStaticFiles(StaticFiles):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    log_startup_config()
     await init_db()
     await init_http_client()
     scheduler = build_usage_refresh_scheduler()
