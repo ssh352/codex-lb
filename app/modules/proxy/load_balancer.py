@@ -57,6 +57,8 @@ class LoadBalancer:
         self._snapshot_lock = asyncio.Lock()
         self._snapshot: _Snapshot | None = None
         self._snapshot_ttl_seconds = get_settings().proxy_snapshot_ttl_seconds
+        self._pinned_settings_checked_at: float = 0.0
+        self._pinned_settings_cached_ids: tuple[str, ...] | None = None
         self._sticky_lock = asyncio.Lock()
         self._sticky_memory: OrderedDict[str, _StickyEntry] = OrderedDict()
 
@@ -69,6 +71,7 @@ class LoadBalancer:
         *,
         reallocate_sticky: bool = False,
     ) -> AccountSelection:
+        await self._maybe_invalidate_snapshot_on_pinned_change()
         snapshot = await self._get_snapshot()
         selected_snapshot: Account | None = None
         error_message: str | None = None
@@ -141,6 +144,32 @@ class LoadBalancer:
         runtime.last_selected_at = time.time()
         return AccountSelection(account=selected_snapshot, error_message=None)
 
+    async def _maybe_invalidate_snapshot_on_pinned_change(self) -> None:
+        snapshot = self._snapshot
+        if snapshot is None:
+            return
+        now = time.time()
+        if (now - snapshot.updated_at) >= self._snapshot_ttl_seconds:
+            return
+        if (now - self._pinned_settings_checked_at) < 1.0:
+            return
+        self._pinned_settings_checked_at = now
+
+        try:
+            async with self._repo_factory() as repos:
+                pinned = await repos.settings.pinned_account_ids()
+        except Exception:
+            return
+
+        pinned_tuple = tuple(pinned)
+        if self._pinned_settings_cached_ids is None:
+            self._pinned_settings_cached_ids = pinned_tuple
+            return
+        if pinned_tuple == self._pinned_settings_cached_ids:
+            return
+        self._pinned_settings_cached_ids = pinned_tuple
+        self._snapshot = None
+
     async def _get_snapshot(self) -> _Snapshot:
         now = time.time()
         snapshot = self._snapshot
@@ -175,6 +204,8 @@ class LoadBalancer:
                 if pinned_prune:
                     await repos.settings.remove_pinned_account_ids(pinned_prune)
                     pinned_raw = [account_id for account_id in pinned_raw if account_id not in set(pinned_prune)]
+                self._pinned_settings_cached_ids = tuple(pinned_raw)
+                self._pinned_settings_checked_at = now
                 pinned_account_ids = frozenset(account_id for account_id in pinned_raw if account_id in account_map)
                 accounts = [_clone_account(account) for account in accounts_orm]
                 account_map = {account.id: account for account in accounts}
