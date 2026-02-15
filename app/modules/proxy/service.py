@@ -244,13 +244,25 @@ class ProxyService:
             )
             yield format_sse_event(event)
             return
+        retryable_codes = {
+            "rate_limit_exceeded",
+            "usage_limit_reached",
+            "insufficient_quota",
+            "usage_not_included",
+            "quota_exceeded",
+        }
+        emitted_any = False
         max_attempts = 3
+        last_retryable_error: ProxyResponseError | None = None
         for attempt in range(max_attempts):
             selection = await self._load_balancer.select_account(
                 sticky_key=sticky_key,
+                reallocate_sticky=attempt > 0,
             )
             account = selection.account
             if not account:
+                if propagate_http_errors and last_retryable_error is not None:
+                    raise last_retryable_error
                 event = response_failed_event(
                     "no_accounts",
                     selection.error_message or "No active accounts available",
@@ -269,6 +281,7 @@ class ProxyService:
                     request_id,
                     attempt < max_attempts - 1,
                 ):
+                    emitted_any = True
                     yield line
                 return
             except _RetryableStreamError as exc:
@@ -295,6 +308,9 @@ class ProxyService:
                     _upstream_error_from_openai(error),
                     error_code,
                 )
+                if not emitted_any and error_code in retryable_codes and attempt < (max_attempts - 1):
+                    last_retryable_error = exc
+                    continue
                 if propagate_http_errors:
                     raise
                 event = response_failed_event(
