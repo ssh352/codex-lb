@@ -9,11 +9,38 @@
   <link rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;32&quot; height=&quot;32&quot; fill=&quot;none&quot; viewBox=&quot;0 0 32 32&quot;%3E%3Cpath stroke=&quot;%23000&quot; stroke-linecap=&quot;round&quot; stroke-width=&quot;2.484&quot; d=&quot;M22.356 19.797H17.17M9.662 12.29l1.979 3.576a.511.511 0 0 1-.005.504l-1.974 3.409M30.758 16c0 8.15-6.607 14.758-14.758 14.758-8.15 0-14.758-6.607-14.758-14.758C1.242 7.85 7.85 1.242 16 1.242c8.15 0 14.758 6.608 14.758 14.758Z&quot;/%3E%3C/svg%3E"
     type="image/svg+xml">
+  <script>
+    (() => {
+      try {
+        const storedTheme = localStorage.getItem("theme");
+        const prefersLight =
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-color-scheme: light)").matches;
+        const theme =
+          storedTheme === "light" || storedTheme === "dark"
+            ? storedTheme
+            : prefersLight
+              ? "light"
+              : "dark";
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch {
+        // ignore storage errors (private mode, quota, etc.)
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/dashboard/index.css?v=__ASSET_VERSION__">
 </head>
 
-<body class="has-scrollbar" x-data="feApp" :data-theme="theme" x-init="init()" x-cloak>
-  <div class="app-shell">
+<body class="has-scrollbar" x-data="feApp" x-init="init()">
+  <!-- AlpineJS is loaded from a CDN below; if the CDN is slow/blocked, show this boot overlay instead of a blank page. -->
+  <div class="boot-overlay" x-data x-init="$el.remove()">
+    <div class="loading-panel" role="status" aria-live="polite">
+      <span class="spinner animate" aria-hidden="true"></span>
+      <div>Loading Dashboard...</div>
+    </div>
+  </div>
+
+  <div class="app-shell" x-cloak>
     <header class="main-header">
       <div class="header-content">
         <h1 class="app-logo">Codex Load Balancer</h1>
@@ -788,6 +815,7 @@
   <script defer src="/dashboard/state_defaults.js?v=__ASSET_VERSION__"></script>
   <script defer src="/dashboard/sort_utils.js?v=__ASSET_VERSION__"></script>
   <script defer src="/dashboard/index.js?v=__ASSET_VERSION__"></script>
+  <!-- Keep AlpineJS external for now; avoid vendoring/bundling. -->
   <script defer src="https://unpkg.com/alpinejs@3.13.2/dist/cdn.min.js"></script>
 </body>
 

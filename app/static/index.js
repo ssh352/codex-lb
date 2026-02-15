@@ -1773,6 +1773,11 @@
 					return;
 				}
 				this.hasInitialized = true;
+				try {
+					document.documentElement.setAttribute("data-theme", this.theme);
+				} catch {
+					// ignore DOM errors
+				}
 				this.view = getViewFromPath(window.location.pathname);
 
 				this.$watch("pagination.limit", () => {
@@ -3224,10 +3229,35 @@
 			formatAccessTokenLabel,
 			formatRefreshTokenLabel,
 			formatIdTokenLabel,
-			theme: localStorage.getItem('theme') || 'dark',
+			theme: (() => {
+				try {
+					const domTheme = document.documentElement.getAttribute("data-theme");
+					if (domTheme === "light" || domTheme === "dark") {
+						return domTheme;
+					}
+					const storedTheme = localStorage.getItem("theme");
+					if (storedTheme === "light" || storedTheme === "dark") {
+						return storedTheme;
+					}
+					if (
+						typeof window.matchMedia === "function" &&
+						window.matchMedia("(prefers-color-scheme: light)").matches
+					) {
+						return "light";
+					}
+					return "dark";
+				} catch {
+					return "dark";
+				}
+			})(),
 			toggleTheme() {
 				this.theme = this.theme === 'dark' ? 'light' : 'dark';
 				localStorage.setItem('theme', this.theme);
+				try {
+					document.documentElement.setAttribute("data-theme", this.theme);
+				} catch {
+					// ignore DOM errors
+				}
 			},
 		}));
 	};

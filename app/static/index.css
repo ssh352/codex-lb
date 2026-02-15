@@ -46,7 +46,7 @@
   --shell-max-width: 1400px;
 }
 
-[data-theme="light"] {
+:root[data-theme="light"] {
   --bg-app: #f4f4f5;
   --bg-panel: #ffffff;
   --bg-card: #ffffff;
@@ -104,11 +104,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-body[data-theme="dark"] {
+:root[data-theme="dark"] {
   color-scheme: dark;
 }
 
-body[data-theme="light"] {
+:root[data-theme="light"] {
   color-scheme: light;
 }
 
@@ -1805,6 +1805,16 @@ button {
 }
 
 /* Loading State */
+.boot-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-app);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .loading-overlay {
   position: absolute;
   inset: 0;
