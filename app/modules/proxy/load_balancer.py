@@ -81,6 +81,10 @@ class LoadBalancer:
         #   sticky entry is dropped and the key is reassigned on selection.
         # - If the pinned pool yields no eligible accounts (e.g. all paused/deactivated/limited), routing
         #   falls back to selecting from the full account set.
+        #
+        # Waste-pressure influences *which* account is chosen when a sticky key is first assigned (or
+        # explicitly reallocated), but stickiness does not proactively migrate just because some other
+        # account later becomes a "better" waste-pressure candidate.
         pinned_active = bool(snapshot.pinned_account_ids)
         pinned_states = (
             [state for state in snapshot.states if state.account_id in snapshot.pinned_account_ids]
@@ -249,7 +253,8 @@ class LoadBalancer:
                 # Stickiness is honored as long as the pinned account remains eligible.
                 # Note: we do not proactively reassign on secondary reset boundaries; reassignment
                 # typically happens on retry (explicit reallocation) or when the pinned account
-                # becomes unavailable.
+                # becomes unavailable/ineligible. In particular, we do not reassign just because
+                # waste-pressure scoring would prefer a different account.
                 pinned_result = select_account([pinned])
                 if pinned_result.account is not None:
                     return pinned_result
@@ -282,7 +287,8 @@ class LoadBalancer:
                 # Stickiness is honored as long as the pinned account remains eligible.
                 # Note: we do not proactively reassign on secondary reset boundaries; reassignment
                 # typically happens on retry (explicit reallocation) or when the pinned account
-                # becomes unavailable.
+                # becomes unavailable/ineligible. In particular, we do not reassign just because
+                # waste-pressure scoring would prefer a different account.
                 pinned_result = select_account([pinned])
                 if pinned_result.account is not None:
                     return pinned_result

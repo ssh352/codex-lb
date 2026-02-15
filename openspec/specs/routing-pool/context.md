@@ -25,7 +25,9 @@ When multiple accounts are pinned, routing is **not** round-robin.
 - It then applies the existing **waste-pressure** load balancing strategy to that subset (e.g. prefer accounts that
   would waste secondary credits if left idle, while avoiding unhealthy accounts).
 - The selector includes a “last selected” tie-break, which tends to spread traffic across similarly-scored accounts.
-- Stickiness can still keep a given `prompt_cache_key` on the same pinned account until a retry reallocates it.
+- Stickiness can still keep a given `prompt_cache_key` on the same pinned account until a retry reallocates it (or the
+  pinned account becomes ineligible). It does not proactively migrate just because another account later has higher
+  waste-pressure.
 - Stickiness never overrides the routing pool: if a sticky mapping points to an unpinned account while the pool is
   active, the proxy drops that mapping and reassigns the key within the pinned pool.
 
