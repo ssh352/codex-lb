@@ -2721,7 +2721,6 @@
 									selectedCount === 1
 										? `Account: ${this.accounts.selectedId || "--"}`
 										: null,
-									`Rotation: ${this.dashboardData.routing?.rotationEnabled ? "enabled" : "disabled"}`,
 									`Last sync: ${lastSyncLabel}`,
 									`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
 									`Auto-refresh: ${autoRefreshLabel}`,
