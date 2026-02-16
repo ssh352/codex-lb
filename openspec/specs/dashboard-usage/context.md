@@ -30,3 +30,14 @@ If you have two accounts with secondary reset times:
 
 Then any summary “Reset in …” label will show “Reset in 2d”, while account list/cards will show
 each account’s own reset.
+
+### What “Consumed 77%” means (Remaining quota by account)
+
+Some dashboard views show a “Remaining quota by account (7D)” visualization with a “Consumed” legend entry.
+
+“Consumed 77%” means: across all accounts, **77% of the total secondary (7d) capacity (credits) is already used**
+right now (credit-weighted by plan capacity), so ~23% remains.
+
+Important nuance: accounts can have different secondary reset timestamps. The consumed/remaining percentages are a
+point-in-time aggregate across accounts’ *current* secondary windows — they do **not** imply all accounts share one
+common “week” or reset moment.

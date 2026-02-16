@@ -1,0 +1,580 @@
+{
+  "uid": "codex-lb",
+  "title": "codex-lb",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 4,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "7d",
+      "30d"
+    ]
+  },
+	  "templating": {
+	    "list": [
+	      {
+	        "name": "model",
+	        "type": "query",
+	        "label": "Model",
+        "datasource": "Prometheus",
+        "query": "label_values(codex_lb_proxy_requests_total, model)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "api",
+        "type": "query",
+        "label": "API",
+        "datasource": "Prometheus",
+        "query": "label_values(codex_lb_proxy_requests_total, api)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "account",
+        "type": "query",
+        "label": "Account",
+        "datasource": "Prometheus",
+        "query": "query_result(codex_lb_account_identity or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\"))",
+        "regex": "account_id=\"(?<value>[^\"]+)\".*display=\"(?<text>[^\"]+)\"",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": ".*"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Cost/hr (USD, total)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) * 3600"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Cost/hr by model (USD, stacked)",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (model) (rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) * 3600"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Tokens/min by kind (total)",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (rate(codex_lb_proxy_tokens_total{model=~\"$model\"}[1h])) * 60"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Cache hit % (input tokens, 1h buckets)",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(increase(codex_lb_proxy_tokens_total{kind=\"cached_input\",model=~\"$model\"}[1h])) / clamp_min(sum(increase(codex_lb_proxy_tokens_total{kind=\"input\",model=~\"$model\"}[1h])), 1)",
+          "interval": "1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Requests/min by model",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (model) (rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h])) * 60"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Error rate",
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(codex_lb_proxy_requests_total{status=\"error\",model=~\"$model\",api=~\"$api\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h]))"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Latency p50/p95 (s)",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Cost/request (avg, USD)",
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h]))"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Top 10 error codes",
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (error_code) (rate(codex_lb_proxy_errors_total[1h])))",
+          "legendFormat": "{{error_code}}"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Top 10 accounts by cost/hr",
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+	        {
+	          "refId": "A",
+          "expr": "label_replace(topk(10, sum by (account_id) (rate(codex_lb_proxy_account_cost_usd_total{account_id=~\"$account\",api=~\"$api\"}[1h])) * 3600) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+          "legendFormat": "{{display}}"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Top 10 accounts by requests/min",
+      "gridPos": {
+        "x": 12,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+	        {
+	          "refId": "A",
+          "expr": "label_replace(topk(10, sum by (account_id) (rate(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1h])) * 60) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+          "legendFormat": "{{display}}"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Error rate by account (Top 10)",
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+	        {
+	          "refId": "A",
+          "expr": "label_replace(topk(10, (sum by (account_id) (rate(codex_lb_proxy_account_requests_total{status=\"error\",account_id=~\"$account\",api=~\"$api\"}[1h])) / sum by (account_id) (rate(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1h])))) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+          "legendFormat": "{{display}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Routing: selections/min by outcome",
+      "gridPos": {
+        "x": 12,
+        "y": 45,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pool, outcome) (rate(codex_lb_lb_select_total[1h])) * 60"
+        }
+      ]
+    },
+	    {
+	      "id": 19,
+	      "type": "timeseries",
+	      "title": "Routing: mark events/min",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (event) (rate(codex_lb_lb_mark_total[1h])) * 60"
+        }
+	      ]
+	    },
+	    {
+	      "id": 21,
+	      "type": "timeseries",
+	      "title": "Cost/hr by account (selected)",
+      "gridPos": {
+        "x": 0,
+        "y": 59,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+	        {
+	          "refId": "A",
+	          "expr": "label_replace((sum by (account_id) (rate(codex_lb_proxy_account_cost_usd_total{account_id=~\"$account\",api=~\"$api\"}[1h])) * 3600) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+          "legendFormat": "{{display}}"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Requests/min by account (selected)",
+      "gridPos": {
+        "x": 12,
+        "y": 59,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+	        {
+	          "refId": "A",
+	          "expr": "label_replace((sum by (account_id) (rate(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1h])) * 60) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+          "legendFormat": "{{display}}"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Retries/min (by error class)",
+      "gridPos": {
+        "x": 0,
+        "y": 74,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (error_class) (rate(codex_lb_proxy_retries_total{api=~\"$api\"}[1h])) * 60"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Implied secondary quota (USD, 1d)",
+      "gridPos": {
+        "x": 12,
+        "y": 74,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+		        {
+			          "refId": "A",
+			          "expr": "label_replace(topk(20, sum by (account_id) (increase(codex_lb_proxy_account_cost_usd_total{account_id=~\"$account\",api=~\"$api\"}[1d])) / clamp_min(((max by (account_id) (max_over_time(codex_lb_secondary_used_percent{account_id=~\"$account\"}[1d]))) - (min by (account_id) (min_over_time(codex_lb_secondary_used_percent{account_id=~\"$account\"}[1d])))) / 100, 0.01)) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+			          "legendFormat": "{{display}}"
+			        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "row",
+      "title": "Daily rollups (requires Prometheus running)",
+      "gridPos": {
+        "x": 0,
+        "y": 81,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Cost/day (USD, total)",
+      "gridPos": {
+        "x": 0,
+        "y": 82,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1d]))"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Cost/day (USD, top accounts)",
+      "gridPos": {
+        "x": 12,
+        "y": 82,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+		        {
+		          "refId": "A",
+		          "expr": "label_replace(topk(20, sum by (account_id) (increase(codex_lb_proxy_account_cost_usd_total{account_id=~\"$account\",api=~\"$api\"}[1d]))) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+		          "legendFormat": "{{display}}"
+		        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Requests/day (total)",
+      "gridPos": {
+        "x": 0,
+        "y": 89,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1d]))"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Requests/day (top accounts)",
+      "gridPos": {
+        "x": 12,
+        "y": 89,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+		        {
+		          "refId": "A",
+	          "expr": "label_replace(topk(20, sum by (account_id) (increase(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1d]))) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+	          "legendFormat": "{{display}}"
+	        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "row",
+      "title": "Today so far (since midnight, browser TZ)",
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Cost today so far (USD)",
+      "gridPos": {
+        "x": 0,
+        "y": 97,
+        "w": 12,
+        "h": 6
+      },
+      "hideTimeOverride": true,
+      "timeFrom": "now/d",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Requests today so far",
+      "gridPos": {
+        "x": 12,
+        "y": 97,
+        "w": 12,
+        "h": 6
+      },
+      "hideTimeOverride": true,
+      "timeFrom": "now/d",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Cost/hr (USD, total, 1h buckets)",
+      "gridPos": {
+        "x": 0,
+        "y": 103,
+        "w": 24,
+        "h": 7
+      },
+      "hideTimeOverride": true,
+      "timeFrom": "now/d",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "spanNulls": false,
+            "fillOpacity": 80,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h]))",
+          "interval": "1h"
+        }
+      ]
+    }
+  ]
+}

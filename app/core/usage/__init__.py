@@ -18,15 +18,15 @@ PLAN_CAPACITY_CREDITS_PRIMARY = {
     "plus": 225.0,
     "business": 225.0,
     "team": 225.0,
-    "pro": 1500.0,
+    "pro": 1800.0,
 }
 
 PLAN_CAPACITY_CREDITS_SECONDARY = {
-    "free": 180.0,
-    "plus": 7560.0,
-    "business": 7560.0,
-    "team": 7560.0,
-    "pro": 50400.0,
+    "free": 100.0,
+    "plus": 400.0,
+    "business": 400.0,
+    "team": 400.0,
+    "pro": 3200.0,
 }
 
 DEFAULT_WINDOW_MINUTES_PRIMARY = 300

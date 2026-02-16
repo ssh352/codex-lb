@@ -5,8 +5,6 @@ from typing import Sequence
 
 from app.core import usage as usage_core
 
-_EPSILON_CREDITS = 0.5
-
 
 @dataclass(frozen=True, slots=True)
 class SecondaryWastePacingInput:
@@ -94,12 +92,12 @@ def compute_secondary_waste_pacing(
                 0.0,
                 float(remaining_credits) - ((float(current_rate) / 3600.0) * float(time_to_reset_s)),
             )
-            on_track = projected_waste <= _EPSILON_CREDITS
+            on_track = projected_waste <= 0.5
 
         if projected_waste is not None:
             evaluated += 1
             projected_waste_total += float(projected_waste)
-            if projected_waste > _EPSILON_CREDITS:
+            if projected_waste > 0.5:
                 at_risk += 1
 
         if current_rate is not None:

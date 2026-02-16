@@ -39,6 +39,7 @@ dependencies = [
     "greenlet>=3.3.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
+    "prometheus-client>=0.22.0",
     "python-multipart>=0.0.21",
     "segno>=1.6.6",
     "sqlalchemy>=2.0.45",

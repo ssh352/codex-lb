@@ -105,6 +105,8 @@ async def test_streaming_retries_across_accounts_on_retryable_http_error() -> No
         __: dict[str, str],
         ___: str,
         ____: bool,
+        *,
+        api: str,
     ) -> AsyncIterator[str]:
         if account.id == "acc1":
             raise _usage_limit_reached_error()
@@ -112,7 +114,9 @@ async def test_streaming_retries_across_accounts_on_retryable_http_error() -> No
 
     service._stream_once = fake_stream_once  # type: ignore[method-assign]
 
-    lines = [line async for line in service._stream_with_retry(_payload(), {}, propagate_http_errors=False)]
+    lines = [
+        line async for line in service._stream_with_retry(_payload(), {}, propagate_http_errors=False, api="responses")
+    ]
     assert lines == ["data: ok\n\n"]
 
     lb: _FakeLoadBalancer = service._load_balancer  # type: ignore[assignment]
@@ -135,13 +139,17 @@ async def test_streaming_does_not_retry_after_emitting_output() -> None:
         __: dict[str, str],
         ___: str,
         ____: bool,
+        *,
+        api: str,
     ) -> AsyncIterator[str]:
         yield "data: chunk\n\n"
         raise _usage_limit_reached_error()
 
     service._stream_once = fake_stream_once  # type: ignore[method-assign]
 
-    lines = [line async for line in service._stream_with_retry(_payload(), {}, propagate_http_errors=False)]
+    lines = [
+        line async for line in service._stream_with_retry(_payload(), {}, propagate_http_errors=False, api="responses")
+    ]
     assert lines[0] == "data: chunk\n\n"
     assert any("event: response.failed" in line for line in lines[1:])
 
@@ -165,6 +173,8 @@ async def test_streaming_propagates_retryable_http_error_when_no_failover_accoun
         __: dict[str, str],
         ___: str,
         ____: bool,
+        *,
+        api: str,
     ) -> AsyncIterator[str]:
         raise _usage_limit_reached_error()
         if False:
@@ -172,7 +182,7 @@ async def test_streaming_propagates_retryable_http_error_when_no_failover_accoun
 
     service._stream_once = fake_stream_once  # type: ignore[method-assign]
 
-    gen = service._stream_with_retry(_payload(), {}, propagate_http_errors=True)
+    gen = service._stream_with_retry(_payload(), {}, propagate_http_errors=True, api="responses")
     with pytest.raises(ProxyResponseError) as exc_info:
         await gen.__anext__()
     assert exc_info.value.status_code == 429

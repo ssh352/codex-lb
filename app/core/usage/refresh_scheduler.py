@@ -6,6 +6,10 @@ import logging
 from dataclasses import dataclass, field
 
 from app.core.config.settings import get_settings
+from app.core.metrics import get_metrics
+from app.core.metrics.metrics import AccountIdentityObservation
+from app.core.usage.waste_pacing import SecondaryWastePacingInput
+from app.core.utils.time import to_epoch_seconds_assuming_utc, utcnow
 from app.db.session import AccountsSessionLocal, SessionLocal, _safe_close, _safe_rollback
 from app.modules.accounts.repository import AccountsRepository
 from app.modules.usage.repository import UsageRepository
@@ -58,6 +62,29 @@ class UsageRefreshScheduler:
                 accounts = await accounts_repo.list_accounts()
                 updater = UsageUpdater(usage_repo, accounts_repo)
                 await updater.refresh_accounts(accounts, latest_usage)
+                latest_secondary = await usage_repo.latest_by_account(window="secondary")
+                metrics = get_metrics()
+                metrics.refresh_account_identity_gauges(
+                    [AccountIdentityObservation(account_id=account.id, email=account.email) for account in accounts],
+                    mode=get_settings().metrics_account_identity_mode,
+                )
+                waste_inputs: list[SecondaryWastePacingInput] = []
+                for account in accounts:
+                    secondary_entry = latest_secondary.get(account.id)
+                    waste_inputs.append(
+                        SecondaryWastePacingInput(
+                            account_id=account.id,
+                            plan_type=account.plan_type,
+                            secondary_used_percent=secondary_entry.used_percent if secondary_entry else None,
+                            secondary_reset_at_epoch=secondary_entry.reset_at if secondary_entry else None,
+                            secondary_window_minutes=secondary_entry.window_minutes if secondary_entry else None,
+                        )
+                    )
+                metrics.refresh_secondary_usage_gauges(
+                    status_values=(account.status.value for account in accounts),
+                    waste_inputs=waste_inputs,
+                    now_epoch=to_epoch_seconds_assuming_utc(utcnow()),
+                )
             except Exception:
                 logger.exception("Usage refresh loop failed")
             finally:

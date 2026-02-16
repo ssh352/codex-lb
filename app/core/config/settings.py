@@ -122,6 +122,7 @@ class Settings(BaseSettings):
     # at process start. Values that may contain secrets are redacted.
     startup_log_config: bool = False
     startup_log_env: bool = False
+    metrics_account_identity_mode: Literal["email", "account_id"] = "email"
 
     @field_validator("database_url")
     @classmethod

@@ -7,6 +7,7 @@ from datetime import datetime
 from functools import lru_cache
 
 from app.core.config.settings import get_settings
+from app.core.metrics import get_metrics
 from app.core.utils.request_id import ensure_request_id
 
 logger = logging.getLogger(__name__)
@@ -83,4 +84,7 @@ def enqueue_request_log(entry: RequestLogCreate) -> bool:
         error_message=entry.error_message,
         requested_at=entry.requested_at,
     )
-    return get_request_log_buffer().try_enqueue(normalized)
+    ok = get_request_log_buffer().try_enqueue(normalized)
+    if not ok:
+        get_metrics().inc_request_log_buffer_dropped()
+    return ok

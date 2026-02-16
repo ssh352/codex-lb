@@ -17,6 +17,7 @@ from app.core.balancer import (
 )
 from app.core.balancer.types import UpstreamError
 from app.core.config.settings import get_settings
+from app.core.metrics import get_metrics
 from app.core.usage.quota import apply_usage_quota
 from app.db.models import Account, AccountStatus, UsageHistory
 from app.modules.accounts.repository import AccountsRepository, AccountStatusUpdate
@@ -93,7 +94,13 @@ class LoadBalancer:
         )
 
         settings = get_settings()
-        sticky_backend = settings.sticky_sessions_backend
+        sticky_backend_setting = settings.sticky_sessions_backend
+        if not sticky_key:
+            sticky_backend = "none"
+        elif sticky_backend_setting in {"db", "memory"}:
+            sticky_backend = sticky_backend_setting
+        else:
+            sticky_backend = "none"
         if sticky_key and sticky_backend == "db":
             async with self._repo_factory() as repos:
                 result = await self._select_with_stickiness(
@@ -103,6 +110,12 @@ class LoadBalancer:
                     reallocate_sticky=reallocate_sticky,
                     sticky_repo=repos.sticky_sessions,
                 )
+                get_metrics().observe_lb_select(
+                    pool="pinned" if pinned_active else "full",
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                    outcome=_selection_outcome(result),
+                )
                 if pinned_active and result.account is None:
                     result = await self._select_with_stickiness(
                         states=snapshot.states,
@@ -111,12 +124,24 @@ class LoadBalancer:
                         reallocate_sticky=reallocate_sticky,
                         sticky_repo=repos.sticky_sessions,
                     )
+                    get_metrics().observe_lb_select(
+                        pool="full",
+                        sticky_backend=sticky_backend,
+                        reallocate_sticky=reallocate_sticky,
+                        outcome=_selection_outcome(result),
+                    )
         elif sticky_key and sticky_backend == "memory":
             result = await self._select_with_memory_stickiness(
                 states=pinned_states,
                 account_map=snapshot.account_map,
                 sticky_key=sticky_key,
                 reallocate_sticky=reallocate_sticky,
+            )
+            get_metrics().observe_lb_select(
+                pool="pinned" if pinned_active else "full",
+                sticky_backend=sticky_backend,
+                reallocate_sticky=reallocate_sticky,
+                outcome=_selection_outcome(result),
             )
             if pinned_active and result.account is None:
                 result = await self._select_with_memory_stickiness(
@@ -125,10 +150,28 @@ class LoadBalancer:
                     sticky_key=sticky_key,
                     reallocate_sticky=reallocate_sticky,
                 )
+                get_metrics().observe_lb_select(
+                    pool="full",
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                    outcome=_selection_outcome(result),
+                )
         else:
             result = select_account(pinned_states)
+            get_metrics().observe_lb_select(
+                pool="pinned" if pinned_active else "full",
+                sticky_backend=sticky_backend,
+                reallocate_sticky=reallocate_sticky,
+                outcome=_selection_outcome(result),
+            )
             if pinned_active and result.account is None:
                 result = select_account(snapshot.states)
+                get_metrics().observe_lb_select(
+                    pool="full",
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                    outcome=_selection_outcome(result),
+                )
 
         if result.account is None:
             error_message = result.error_message
@@ -223,6 +266,7 @@ class LoadBalancer:
                 pinned_account_ids=pinned_account_ids,
                 updated_at=now,
             )
+            get_metrics().observe_lb_snapshot_refresh(updated_at_seconds=now)
             self._snapshot = snapshot
             return snapshot
 
@@ -303,6 +347,7 @@ class LoadBalancer:
         handle_rate_limit(state, error)
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+        get_metrics().observe_lb_mark(event="rate_limit", account_id=account.id)
         self._snapshot = None
 
     async def mark_quota_exceeded(self, account: Account, error: UpstreamError) -> None:
@@ -311,6 +356,7 @@ class LoadBalancer:
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
             await repos.settings.remove_pinned_account_ids([account.id])
+        get_metrics().observe_lb_mark(event="quota_exceeded", account_id=account.id)
         self._snapshot = None
 
     async def mark_permanent_failure(self, account: Account, error_code: str) -> None:
@@ -318,6 +364,8 @@ class LoadBalancer:
         handle_permanent_failure(state, error_code)
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+        get_metrics().observe_lb_mark(event="permanent_failure", account_id=account.id)
+        get_metrics().observe_lb_permanent_failure(code=error_code)
         self._snapshot = None
 
     async def record_error(self, account: Account) -> None:
@@ -326,6 +374,7 @@ class LoadBalancer:
         state.last_error_at = time.time()
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+        get_metrics().observe_lb_mark(event="error", account_id=account.id)
         self._snapshot = None
 
     def _state_for(self, account: Account) -> AccountState:
@@ -516,3 +565,25 @@ def _usage_snapshots(entries: dict[str, UsageHistory]) -> dict[str, _UsageSnapsh
         )
         for account_id, entry in entries.items()
     }
+
+
+def _selection_outcome(result: SelectionResult) -> str:
+    if result.account is not None:
+        return "selected"
+    match result.reason_code:
+        case "paused_or_auth":
+            return "paused_or_auth"
+        case "paused":
+            return "paused"
+        case "auth":
+            return "auth"
+        case "quota_exceeded":
+            return "quota_exceeded"
+        case "rate_limited":
+            return "rate_limited"
+        case "cooldown":
+            return "cooldown"
+        case "no_available":
+            return "no_available"
+        case _:
+            return "unknown"

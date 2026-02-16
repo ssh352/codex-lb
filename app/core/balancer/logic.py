@@ -37,6 +37,7 @@ class AccountState:
 class SelectionResult:
     account: AccountState | None
     error_message: str | None
+    reason_code: str | None
 
 
 def select_account(
@@ -85,21 +86,26 @@ def select_account(
         quota_exceeded = [s for s in all_states if s.status == AccountStatus.QUOTA_EXCEEDED]
 
         if paused and deactivated and not rate_limited and not quota_exceeded:
-            return SelectionResult(None, "All accounts are paused or require re-authentication")
+            return SelectionResult(None, "All accounts are paused or require re-authentication", "paused_or_auth")
         if paused and not rate_limited and not quota_exceeded:
-            return SelectionResult(None, "All accounts are paused")
+            return SelectionResult(None, "All accounts are paused", "paused")
         if deactivated and not rate_limited and not quota_exceeded:
-            return SelectionResult(None, "All accounts require re-authentication")
+            return SelectionResult(None, "All accounts require re-authentication", "auth")
+        if rate_limited:
+            reset_candidates = [s.reset_at for s in rate_limited if s.reset_at]
+            if reset_candidates:
+                wait_seconds = max(0, min(reset_candidates) - int(current))
+                return SelectionResult(None, f"Rate limit exceeded. Try again in {wait_seconds:.0f}s", "rate_limited")
         if quota_exceeded:
             reset_candidates = [s.reset_at for s in quota_exceeded if s.reset_at]
             if reset_candidates:
                 wait_seconds = max(0, min(reset_candidates) - int(current))
-                return SelectionResult(None, f"Rate limit exceeded. Try again in {wait_seconds:.0f}s")
+                return SelectionResult(None, f"Rate limit exceeded. Try again in {wait_seconds:.0f}s", "quota_exceeded")
         cooldowns = [s.cooldown_until for s in all_states if s.cooldown_until and s.cooldown_until > current]
         if cooldowns:
             wait_seconds = max(0.0, min(cooldowns) - current)
-            return SelectionResult(None, f"Rate limit exceeded. Try again in {wait_seconds:.0f}s")
-        return SelectionResult(None, "No available accounts")
+            return SelectionResult(None, f"Rate limit exceeded. Try again in {wait_seconds:.0f}s", "cooldown")
+        return SelectionResult(None, "No available accounts", "no_available")
 
     def _usage_sort_key(state: AccountState) -> tuple[float, float, float, str]:
         primary_used = state.used_percent if state.used_percent is not None else 0.0
@@ -141,7 +147,7 @@ def select_account(
         return -score, secondary_used_fallback, primary_used_fallback, last_selected, account_id
 
     selected = min(available, key=_waste_pressure_sort_key)
-    return SelectionResult(selected, None)
+    return SelectionResult(selected, None, None)
 
 
 def handle_rate_limit(state: AccountState, error: UpstreamError) -> None:

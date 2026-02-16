@@ -129,6 +129,7 @@ async def v1_chat_completions(
         responses_payload,
         request.headers,
         propagate_http_errors=True,
+        api="chat_completions",
     )
     try:
         first = await stream.__anext__()

@@ -23,6 +23,7 @@ from app.db.session import close_db, init_db
 from app.modules.accounts import api as accounts_api
 from app.modules.dashboard import api as dashboard_api
 from app.modules.health import api as health_api
+from app.modules.metrics import api as metrics_api
 from app.modules.oauth import api as oauth_api
 from app.modules.proxy import api as proxy_api
 from app.modules.request_logs import api as request_logs_api
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(oauth_api.router)
     app.include_router(settings_api.router)
     app.include_router(health_api.router)
+    app.include_router(metrics_api.router)
 
     static_dir = Path(__file__).parent / "static"
     index_html = static_dir / "index.html"

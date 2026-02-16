@@ -24,7 +24,14 @@ async def init_http_client() -> HttpClient:
         return _http_client
 
     # Create ClientSession with trust_env=True to automatically use proxy settings
-    # from environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
+    # from environment variables (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY).
+    #
+    # Note: if an HTTP(S) proxy or VPN is in the path and it truncates upstream responses
+    # (especially long-lived streaming/SSE responses), aiohttp can raise:
+    #   - TransferEncodingError / ClientPayloadError ("Response payload is not completed")
+    # This indicates the peer closed the connection before all bytes promised by HTTP framing
+    # (Content-Length/chunked) were received. When debugging, try bypassing the proxy for
+    # upstream hosts via NO_PROXY (e.g. chatgpt.com, auth.openai.com) or unset proxy env vars.
     settings = get_settings()
     # `enable_cleanup_closed` is ignored on newer Python patch releases and
     # triggers an aiohttp DeprecationWarning. Keep the option only on runtimes

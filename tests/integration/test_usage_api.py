@@ -117,8 +117,8 @@ async def test_usage_window_secondary_uses_latest_window_minutes(async_client, d
     accounts = {item["accountId"]: item for item in payload["accounts"]}
     entry = accounts["acc_sec"]
     assert entry["remainingPercentAvg"] == pytest.approx(60.0)
-    assert entry["capacityCredits"] == pytest.approx(7560.0)
-    assert entry["remainingCredits"] == pytest.approx(4536.0)
+    assert entry["capacityCredits"] == pytest.approx(400.0)
+    assert entry["remainingCredits"] == pytest.approx(240.0)
 
 
 @pytest.mark.asyncio

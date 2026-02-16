@@ -1049,66 +1049,6 @@
 		const secondaryWindowMinutes =
 			state.dashboardData.usage?.secondary?.windowMinutes ?? null;
 		const secondaryExhaustedAccounts = buildSecondaryExhaustedIndex(accounts);
-		const wastePacingSummary = state.dashboardData.wastePacing?.summary ?? null;
-		const projectedWasteTotal = toNumber(
-			wastePacingSummary?.projectedWasteCreditsTotal,
-		);
-		const evaluatedCount = toNumber(wastePacingSummary?.accountsEvaluated) ?? 0;
-		const atRiskCount = toNumber(wastePacingSummary?.accountsAtRisk) ?? 0;
-		const currentRateTotal = toNumber(
-			wastePacingSummary?.currentRateCreditsPerHourTotal,
-		);
-		const requiredRateTotal = toNumber(
-			wastePacingSummary?.requiredRateCreditsPerHourTotal,
-		);
-		let earliestAtRiskResetAt = null;
-		const wastePacingAccounts = state.dashboardData.wastePacing?.accounts || [];
-		let speedUpTotal = 0;
-		let speedUpCount = 0;
-		let slowDownTotal = 0;
-		let slowDownCount = 0;
-		wastePacingAccounts.forEach((entry) => {
-			if (entry?.onTrack !== false) {
-				const currentRate = toNumber(entry?.currentRateCreditsPerHour);
-				const requiredRate = toNumber(entry?.requiredRateCreditsPerHour);
-				if (
-					entry?.onTrack === true &&
-					currentRate !== null &&
-					requiredRate !== null &&
-					currentRate > requiredRate
-				) {
-					slowDownTotal += currentRate - requiredRate;
-					slowDownCount += 1;
-				}
-				return;
-			}
-			const currentRate = toNumber(entry?.currentRateCreditsPerHour);
-			const requiredRate = toNumber(entry?.requiredRateCreditsPerHour);
-			if (currentRate !== null && requiredRate !== null && requiredRate > currentRate) {
-				speedUpTotal += requiredRate - currentRate;
-				speedUpCount += 1;
-			}
-			const date = parseDate(entry?.resetAtSecondary);
-			if (!date) {
-				return;
-			}
-			if (!earliestAtRiskResetAt || date.getTime() < earliestAtRiskResetAt.getTime()) {
-				earliestAtRiskResetAt = date;
-			}
-		});
-		const earliestAtRiskResetLabel = earliestAtRiskResetAt
-			? formatQuotaResetLabel(earliestAtRiskResetAt.toISOString())
-			: "--";
-		const summaryAction =
-			evaluatedCount <= 0 || projectedWasteTotal === null
-				? "Action: wait for more usage samples"
-				: projectedWasteTotal > 0.5
-					? speedUpCount > 0 && speedUpTotal > 0
-						? `Action: increase usage ~${formatCompactNumber(speedUpTotal)}/hr (or reduce pool)`
-						: "Action: increase usage (or reduce pool)"
-					: slowDownCount > 0 && slowDownTotal > 0
-						? `Action: you can slow down ~${formatCompactNumber(slowDownTotal)}/hr`
-						: "Action: keep current pace";
 
 		const badges = ["active", "paused", "limited", "exceeded", "deactivated"]
 			.map((status) => {
@@ -1139,18 +1079,6 @@
 						meta: `Avg per hour: ${formatCurrency(
 						avgPerHour(metrics.cost7d, secondaryWindowMinutes),
 					)}`,
-				},
-				{
-					title: "Secondary waste forecast",
-					value:
-						evaluatedCount <= 0 || projectedWasteTotal === null
-							? "Not enough data"
-						: projectedWasteTotal <= 0.5
-							? "On track (≈0 waste)"
-							: `~${formatCompactNumber(projectedWasteTotal)} credits likely to expire unused`,
-					meta: `At risk: ${formatNumber(atRiskCount)}/${formatNumber(
-						evaluatedCount,
-					)} • Next at-risk reset: ${earliestAtRiskResetLabel} • ${summaryAction}`,
 				},
 				{
 					title: "Active accounts",
@@ -1216,6 +1144,8 @@
 				};
 			});
 			if (capacity > 0) {
+				// Consumed% is credit-weighted across accounts: (capacity - remaining) / capacity.
+				// Note: secondary reset timestamps are per-account; this is a point-in-time aggregate.
 				const consumedPercent = Math.min(
 					100,
 					Math.max(0, (consumed / capacity) * 100),
@@ -1244,62 +1174,10 @@
 			};
 			});
 
-		const pacingIndex = new Map(
-			(state.dashboardData.wastePacing?.accounts || []).map((entry) => [
-				entry.accountId,
-				entry,
-			]),
-		);
-
 		const accountCards = accounts.map((account) => {
 			const secondaryRemaining =
 				toNumber(account.usage?.secondaryRemainingPercent) || 0;
 			const remainingRounded = formatPercentValue(secondaryRemaining);
-			const pacing = pacingIndex.get(account.id) || null;
-			const onTrack = pacing?.onTrack;
-			const projectedWaste = toNumber(pacing?.projectedWasteCredits);
-			const requiredRate = toNumber(pacing?.requiredRateCreditsPerHour);
-			const currentRate = toNumber(pacing?.currentRateCreditsPerHour);
-			const remainingCredits = toNumber(pacing?.remainingCreditsSecondary);
-			const resetLabel = formatQuotaResetLabel(pacing?.resetAtSecondary);
-			const timeToEmptyLabel =
-				currentRate !== null &&
-				currentRate > 0 &&
-				remainingCredits !== null &&
-				remainingCredits > 0
-					? formatRelative((remainingCredits / currentRate) * 3600 * 1000)
-					: "--";
-			let pacingText = "Pacing: --";
-			let pacingClass = "text-muted";
-			if (onTrack === true) {
-				if (currentRate !== null && requiredRate !== null && currentRate > requiredRate) {
-					const deltaDown = currentRate - requiredRate;
-					pacingText = `Action: slow down ~${formatCompactNumber(
-						deltaDown,
-					)}/hr (hit 0 ${timeToEmptyLabel}) • Reset ${resetLabel}`;
-					pacingClass = "text-limited";
-				} else {
-					pacingText = `Action: keep pace (≈0 waste) • Reset ${resetLabel}`;
-					pacingClass = "text-success";
-				}
-			} else if (onTrack === false) {
-				const wasteLabel =
-					projectedWaste === null
-						? "--"
-						: `~${formatCompactNumber(projectedWaste)}`;
-				let action = "Action: increase usage";
-				if (currentRate !== null && requiredRate !== null) {
-					const deltaUp = requiredRate - currentRate;
-					action =
-						deltaUp > 0
-							? `Action: speed up ~${formatCompactNumber(deltaUp)}/hr`
-							: "Action: keep pace";
-				} else if (requiredRate !== null) {
-					action = `Action: target ${formatCompactNumber(requiredRate)}/hr`;
-				}
-				pacingText = `${action} • Waste: ${wasteLabel} by ${resetLabel}`;
-				pacingClass = "text-error";
-			}
 			return {
 				email: account.email,
 				accountId: account.id,
@@ -1313,8 +1191,6 @@
 					progressClass: calculateProgressClass(account.status, secondaryRemaining),
 					marquee: account.status === "deactivated",
 					meta: formatQuotaResetMeta(account.resetAtSecondary, secondaryWindowMinutes),
-					pacingText,
-					pacingClass,
 					actions: buildAccountActions(account),
 				};
 			});

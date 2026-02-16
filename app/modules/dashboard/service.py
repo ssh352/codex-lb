@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import timedelta
 
 from app.core import usage as usage_core
+from app.core.config.settings import get_settings
 from app.core.crypto import TokenEncryptor
+from app.core.metrics import get_metrics
+from app.core.metrics.metrics import AccountIdentityObservation
 from app.core.usage.types import UsageWindowRow
 from app.core.usage.waste_pacing import (
     SecondaryWastePacingInput,
@@ -87,6 +90,12 @@ class DashboardService:
         recent_logs = await self._repo.list_recent_logs(limit=request_limit, offset=request_offset)
         request_logs = [to_request_log_entry(log) for log in recent_logs]
 
+        metrics = get_metrics()
+        metrics.refresh_account_identity_gauges(
+            [AccountIdentityObservation(account_id=account.id, email=account.email) for account in accounts],
+            mode=get_settings().metrics_account_identity_mode,
+        )
+
         waste_inputs: list[SecondaryWastePacingInput] = []
         for account in accounts:
             secondary_entry = secondary_usage.get(account.id)
@@ -99,6 +108,12 @@ class DashboardService:
                     secondary_window_minutes=secondary_entry.window_minutes if secondary_entry else None,
                 )
             )
+
+        metrics.refresh_secondary_usage_gauges(
+            status_values=(account.status.value for account in accounts),
+            waste_inputs=waste_inputs,
+            now_epoch=now_epoch,
+        )
         waste_result = compute_secondary_waste_pacing(waste_inputs, now_epoch=now_epoch)
         waste_pacing = DashboardWastePacing(
             summary=DashboardWastePacingSummary(

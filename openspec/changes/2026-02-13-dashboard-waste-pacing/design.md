@@ -34,7 +34,7 @@ For each account `i`:
 
 ### On-track
 
-- `on_track_i = projected_waste_i <= EPSILON_CREDITS`, where `EPSILON_CREDITS = 0.5`.
+- `on_track_i = projected_waste_i <= 0.5` credits.
 
 ## API
 
@@ -52,4 +52,3 @@ All timestamps remain ISO 8601 strings via dashboard schemas.
   - On track: “On track to 0 waste”
   - At risk: “Projected waste: ~X credits (need Y/hr)”
   - Unknown: “Waste pacing: --”
-

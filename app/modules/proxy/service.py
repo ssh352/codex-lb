@@ -20,6 +20,8 @@ from app.core.clients.proxy import stream_responses as core_stream_responses
 from app.core.config.settings import get_settings
 from app.core.crypto import TokenEncryptor
 from app.core.errors import openai_error, response_failed_event
+from app.core.metrics import get_metrics
+from app.core.metrics.metrics import ProxyRequestObservation
 from app.core.openai.models import OpenAIResponsePayload
 from app.core.openai.parsing import parse_sse_event
 from app.core.openai.requests import ResponsesCompactRequest, ResponsesRequest
@@ -69,6 +71,7 @@ class ProxyService:
         headers: Mapping[str, str],
         *,
         propagate_http_errors: bool = False,
+        api: str = "responses",
     ) -> AsyncIterator[str]:
         _maybe_log_proxy_request_payload("stream", payload, headers)
         _maybe_log_proxy_request_shape("stream", payload, headers)
@@ -77,6 +80,7 @@ class ProxyService:
             payload,
             filtered,
             propagate_http_errors=propagate_http_errors,
+            api=api,
         )
 
     async def compact_responses(
@@ -87,6 +91,7 @@ class ProxyService:
         _maybe_log_proxy_request_payload("compact", payload, headers)
         _maybe_log_proxy_request_shape("compact", payload, headers)
         filtered = filter_inbound_headers(headers)
+        request_id = ensure_request_id()
         sticky_key = _sticky_key_from_compact_payload(payload)
         retryable_codes = {
             "rate_limit_exceeded",
@@ -98,7 +103,59 @@ class ProxyService:
         max_attempts = 3
         last_retryable_error: ProxyResponseError | None = None
 
+        async def _persist_request_log(
+            *,
+            account_id: str,
+            model: str,
+            latency_ms: int,
+            status: str,
+            error_code: str | None,
+            error_message: str | None,
+            input_tokens: int | None,
+            output_tokens: int | None,
+            cached_input_tokens: int | None,
+            reasoning_tokens: int | None,
+        ) -> None:
+            with anyio.CancelScope(shield=True):
+                if get_settings().request_logs_buffer_enabled:
+                    enqueue_request_log(
+                        RequestLogCreate(
+                            account_id=account_id,
+                            request_id=request_id,
+                            model=model,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            cached_input_tokens=cached_input_tokens,
+                            reasoning_tokens=reasoning_tokens,
+                            reasoning_effort=None,
+                            latency_ms=latency_ms,
+                            status=status,
+                            error_code=error_code,
+                            error_message=error_message,
+                            requested_at=utcnow(),
+                        )
+                    )
+                    return
+
+                async with self._repo_factory() as repos:
+                    await repos.request_logs.add_log(
+                        account_id=account_id,
+                        request_id=request_id,
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cached_input_tokens=cached_input_tokens,
+                        reasoning_tokens=reasoning_tokens,
+                        reasoning_effort=None,
+                        latency_ms=latency_ms,
+                        status=status,
+                        error_code=error_code,
+                        error_message=error_message,
+                        requested_at=utcnow(),
+                    )
+
         for attempt in range(max_attempts):
+            start = time.monotonic()
             selection = await self._load_balancer.select_account(
                 sticky_key=sticky_key,
                 reallocate_sticky=attempt > 0,
@@ -119,7 +176,61 @@ class ProxyService:
 
             try:
                 account = await self._ensure_fresh_if_needed(account)
-                return await _call_compact(account)
+                response = await _call_compact(account)
+                latency_ms = int((time.monotonic() - start) * 1000)
+                usage = response.usage
+                input_tokens = usage.input_tokens if usage else None
+                output_tokens = usage.output_tokens if usage else None
+                cached_input_tokens = (
+                    usage.input_tokens_details.cached_tokens if usage and usage.input_tokens_details else None
+                )
+                reasoning_tokens = (
+                    usage.output_tokens_details.reasoning_tokens if usage and usage.output_tokens_details else None
+                )
+                status = "success"
+                error_code = None
+                if response.status == "failed" or response.error is not None:
+                    status = "error"
+                    error = response.error
+                    error_code = _normalize_error_code(
+                        error.code if error else None,
+                        error.type if error else None,
+                    )
+                get_metrics().observe_proxy_request(
+                    ProxyRequestObservation(
+                        account_id=account.id,
+                        api="responses_compact",
+                        status=status,
+                        model=payload.model,
+                        latency_ms=latency_ms,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cached_input_tokens=cached_input_tokens,
+                        reasoning_tokens=reasoning_tokens,
+                        error_code=error_code,
+                    )
+                )
+                try:
+                    await _persist_request_log(
+                        account_id=account.id,
+                        model=payload.model,
+                        latency_ms=latency_ms,
+                        status=status,
+                        error_code=error_code,
+                        error_message=response.error.message if response.error else None,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cached_input_tokens=cached_input_tokens,
+                        reasoning_tokens=reasoning_tokens,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to persist request log account_id=%s request_id=%s",
+                        account.id,
+                        request_id,
+                        exc_info=True,
+                    )
+                return response
             except ProxyResponseError as exc:
                 if exc.status_code == 401:
                     try:
@@ -127,11 +238,142 @@ class ProxyService:
                     except RefreshError as refresh_exc:
                         if refresh_exc.is_permanent:
                             await self._load_balancer.mark_permanent_failure(account, refresh_exc.code)
+                        latency_ms = int((time.monotonic() - start) * 1000)
+                        get_metrics().observe_proxy_request(
+                            ProxyRequestObservation(
+                                account_id=account.id,
+                                api="responses_compact",
+                                status="error",
+                                model=payload.model,
+                                latency_ms=latency_ms,
+                                input_tokens=None,
+                                output_tokens=None,
+                                cached_input_tokens=None,
+                                reasoning_tokens=None,
+                                error_code="auth_refresh_failed",
+                            )
+                        )
+                        try:
+                            await _persist_request_log(
+                                account_id=account.id,
+                                model=payload.model,
+                                latency_ms=latency_ms,
+                                status="error",
+                                error_code="auth_refresh_failed",
+                                error_message=str(refresh_exc),
+                                input_tokens=None,
+                                output_tokens=None,
+                                cached_input_tokens=None,
+                                reasoning_tokens=None,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Failed to persist request log account_id=%s request_id=%s",
+                                account.id,
+                                request_id,
+                                exc_info=True,
+                            )
                         raise exc
                     try:
-                        return await _call_compact(account)
+                        response = await _call_compact(account)
+                        latency_ms = int((time.monotonic() - start) * 1000)
+                        usage = response.usage
+                        input_tokens = usage.input_tokens if usage else None
+                        output_tokens = usage.output_tokens if usage else None
+                        cached_input_tokens = (
+                            usage.input_tokens_details.cached_tokens if usage and usage.input_tokens_details else None
+                        )
+                        reasoning_tokens = (
+                            usage.output_tokens_details.reasoning_tokens
+                            if usage and usage.output_tokens_details
+                            else None
+                        )
+                        status = "success"
+                        error_code = None
+                        if response.status == "failed" or response.error is not None:
+                            status = "error"
+                            error = response.error
+                            error_code = _normalize_error_code(
+                                error.code if error else None,
+                                error.type if error else None,
+                            )
+                        get_metrics().observe_proxy_request(
+                            ProxyRequestObservation(
+                                account_id=account.id,
+                                api="responses_compact",
+                                status=status,
+                                model=payload.model,
+                                latency_ms=latency_ms,
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                cached_input_tokens=cached_input_tokens,
+                                reasoning_tokens=reasoning_tokens,
+                                error_code=error_code,
+                            )
+                        )
+                        try:
+                            await _persist_request_log(
+                                account_id=account.id,
+                                model=payload.model,
+                                latency_ms=latency_ms,
+                                status=status,
+                                error_code=error_code,
+                                error_message=response.error.message if response.error else None,
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                cached_input_tokens=cached_input_tokens,
+                                reasoning_tokens=reasoning_tokens,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Failed to persist request log account_id=%s request_id=%s",
+                                account.id,
+                                request_id,
+                                exc_info=True,
+                            )
+                        return response
                     except ProxyResponseError as exc:
                         await self._handle_proxy_error(account, exc)
+                        error = _parse_openai_error(exc.payload)
+                        code = _normalize_error_code(
+                            error.code if error else None,
+                            error.type if error else None,
+                        )
+                        latency_ms = int((time.monotonic() - start) * 1000)
+                        get_metrics().observe_proxy_request(
+                            ProxyRequestObservation(
+                                account_id=account.id,
+                                api="responses_compact",
+                                status="error",
+                                model=payload.model,
+                                latency_ms=latency_ms,
+                                input_tokens=None,
+                                output_tokens=None,
+                                cached_input_tokens=None,
+                                reasoning_tokens=None,
+                                error_code=code,
+                            )
+                        )
+                        try:
+                            await _persist_request_log(
+                                account_id=account.id,
+                                model=payload.model,
+                                latency_ms=latency_ms,
+                                status="error",
+                                error_code=code,
+                                error_message=error.message if error else None,
+                                input_tokens=None,
+                                output_tokens=None,
+                                cached_input_tokens=None,
+                                reasoning_tokens=None,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Failed to persist request log account_id=%s request_id=%s",
+                                account.id,
+                                request_id,
+                                exc_info=True,
+                            )
                         raise
 
                 error = _parse_openai_error(exc.payload)
@@ -140,7 +382,47 @@ class ProxyService:
                     error.type if error else None,
                 )
                 await self._handle_stream_error(account, _upstream_error_from_openai(error), code)
+                latency_ms = int((time.monotonic() - start) * 1000)
+                get_metrics().observe_proxy_request(
+                    ProxyRequestObservation(
+                        account_id=account.id,
+                        api="responses_compact",
+                        status="error",
+                        model=payload.model,
+                        latency_ms=latency_ms,
+                        input_tokens=None,
+                        output_tokens=None,
+                        cached_input_tokens=None,
+                        reasoning_tokens=None,
+                        error_code=code,
+                    )
+                )
+                try:
+                    await _persist_request_log(
+                        account_id=account.id,
+                        model=payload.model,
+                        latency_ms=latency_ms,
+                        status="error",
+                        error_code=code,
+                        error_message=error.message if error else None,
+                        input_tokens=None,
+                        output_tokens=None,
+                        cached_input_tokens=None,
+                        reasoning_tokens=None,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to persist request log account_id=%s request_id=%s",
+                        account.id,
+                        request_id,
+                        exc_info=True,
+                    )
                 if code in retryable_codes and attempt < (max_attempts - 1):
+                    get_metrics().observe_proxy_retry(
+                        api="responses_compact",
+                        error_code=code,
+                        account_id=account.id,
+                    )
                     last_retryable_error = exc
                     continue
                 raise
@@ -232,6 +514,7 @@ class ProxyService:
         headers: Mapping[str, str],
         *,
         propagate_http_errors: bool,
+        api: str,
     ) -> AsyncIterator[str]:
         request_id = ensure_request_id()
         sticky_key = _sticky_key_from_payload(payload)
@@ -280,12 +563,18 @@ class ProxyService:
                     headers,
                     request_id,
                     attempt < max_attempts - 1,
+                    api=api,
                 ):
                     emitted_any = True
                     yield line
                 return
             except _RetryableStreamError as exc:
                 await self._handle_stream_error(account, exc.error, exc.code)
+                get_metrics().observe_proxy_retry(
+                    api=api,
+                    error_code=exc.code,
+                    account_id=account_id_value,
+                )
                 continue
             except ProxyResponseError as exc:
                 if exc.status_code == 401:
@@ -295,7 +584,7 @@ class ProxyService:
                         if refresh_exc.is_permanent:
                             await self._load_balancer.mark_permanent_failure(account, refresh_exc.code)
                         continue
-                    async for line in self._stream_once(account, payload, headers, request_id, False):
+                    async for line in self._stream_once(account, payload, headers, request_id, False, api=api):
                         yield line
                     return
                 error = _parse_openai_error(exc.payload)
@@ -309,6 +598,11 @@ class ProxyService:
                     error_code,
                 )
                 if not emitted_any and error_code in retryable_codes and attempt < (max_attempts - 1):
+                    get_metrics().observe_proxy_retry(
+                        api=api,
+                        error_code=error_code,
+                        account_id=account_id_value,
+                    )
                     last_retryable_error = exc
                     continue
                 if propagate_http_errors:
@@ -359,6 +653,8 @@ class ProxyService:
         headers: Mapping[str, str],
         request_id: str,
         allow_retry: bool,
+        *,
+        api: str,
     ) -> AsyncIterator[str]:
         account_id_value = account.id
         access_token = self._encryptor.decrypt(account.access_token_encrypted)
@@ -450,6 +746,20 @@ class ProxyService:
             )
             with anyio.CancelScope(shield=True):
                 try:
+                    get_metrics().observe_proxy_request(
+                        ProxyRequestObservation(
+                            account_id=account_id_value,
+                            api=api,
+                            status=status,
+                            model=model or "unknown",
+                            latency_ms=latency_ms,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            cached_input_tokens=cached_input_tokens,
+                            reasoning_tokens=reasoning_tokens,
+                            error_code=error_code,
+                        )
+                    )
                     if get_settings().request_logs_buffer_enabled:
                         enqueue_request_log(
                             RequestLogCreate(
