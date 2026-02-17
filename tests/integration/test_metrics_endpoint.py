@@ -58,5 +58,5 @@ async def test_metrics_endpoint_exports_core_metrics(async_client, db_setup) -> 
     body = response.text
     assert "codex_lb_proxy_requests_total" in body
     assert "codex_lb_accounts_total" in body
-    assert 'codex_lb_account_identity{account_id="acc_metrics",display="metrics@example.com"}' in body
+    assert 'codex_lb_account_identity{account_id="acc_metrics",display="metrics@example.com",plan_type="plus"}' in body
     assert 'codex_lb_secondary_used_percent{account_id="acc_metrics"}' in body

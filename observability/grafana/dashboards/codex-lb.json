@@ -30,12 +30,12 @@
       "30d"
     ]
   },
-	  "templating": {
-	    "list": [
-	      {
-	        "name": "model",
-	        "type": "query",
-	        "label": "Model",
+  "templating": {
+    "list": [
+      {
+        "name": "model",
+        "type": "query",
+        "label": "Model",
         "datasource": "Prometheus",
         "query": "label_values(codex_lb_proxy_requests_total, model)",
         "multi": true,
@@ -74,9 +74,19 @@
           "text": "All",
           "value": ".*"
         }
-      }
-    ]
-  },
+      },
+		      {
+		        "name": "secondary_quota_min_pp",
+		        "type": "custom",
+		        "label": "Min secondary used (pp)",
+		        "query": "20,30,40,50",
+		        "current": {
+		          "text": "20",
+		          "value": "20"
+		        }
+		      }
+	    ]
+	  },
   "panels": [
     {
       "id": 1,
@@ -392,22 +402,328 @@
         }
       ]
     },
-    {
-      "id": 26,
-      "type": "timeseries",
-      "title": "Implied secondary quota (USD, 1d)",
-      "gridPos": {
-        "x": 12,
-        "y": 74,
-        "w": 12,
-        "h": 7
-      },
+			    {
+			      "id": 26,
+			      "type": "table",
+			      "title": "Estimated Weekly Quota (USD, 7d)",
+				      "description": "Rolling per-account estimate from SQLite. Quota ≈ Spend / (used_pp/100), where Spend is proxy cost from request_logs and used_pp is the latest secondary usage_history.used_percent for the current weekly cycle (clamped to [0,100]); both are clipped to the last 7 days. Use $secondary_quota_min_pp to suppress thin-signal accounts.",
+				      "gridPos": {
+				        "x": 12,
+				        "y": 74,
+				        "w": 12,
+				        "h": 7
+				      },
+			      "fieldConfig": {
+			        "defaults": {
+			          "color": {
+			            "mode": "thresholds"
+			          },
+			          "custom": {
+			            "align": "auto",
+			            "cellOptions": {
+			              "type": "auto"
+			            },
+			            "inspect": false
+			          },
+			          "mappings": [],
+			          "thresholds": {
+			            "mode": "absolute",
+			            "steps": [
+			              {
+			                "color": "green",
+			                "value": null
+			              },
+			              {
+			                "color": "red",
+			                "value": 1
+			              }
+			            ]
+			          }
+			        },
+			        "overrides": [
+			          {
+			            "matcher": {
+			              "id": "byName",
+			              "options": "account_display"
+			            },
+			            "properties": [
+			              {
+			                "id": "displayName",
+			                "value": "Account"
+			              },
+			              {
+			                "id": "custom.cellOptions",
+			                "value": {
+			                  "type": "color-text"
+			                }
+			              },
+			              {
+			                "id": "mappings",
+			                "value": [
+			                  {
+			                    "type": "regex",
+			                    "options": {
+			                      "pattern": "^free::(.*)$",
+			                      "result": {
+			                        "text": "$1 (free)",
+			                        "color": "#71717a"
+			                      }
+			                    }
+			                  },
+			                  {
+			                    "type": "regex",
+			                    "options": {
+			                      "pattern": "^plus::(.*)$",
+			                      "result": {
+			                        "text": "$1 (plus)",
+			                        "color": "#1d4ed8"
+			                      }
+			                    }
+			                  },
+			                  {
+			                    "type": "regex",
+			                    "options": {
+			                      "pattern": "^pro::(.*)$",
+			                      "result": {
+			                        "text": "$1 (pro)",
+			                        "color": "#6d28d9"
+			                      }
+			                    }
+			                  },
+			                  {
+			                    "type": "regex",
+			                    "options": {
+			                      "pattern": "^[^:]+::(.*)$",
+			                      "result": {
+			                        "text": "$1",
+			                        "color": "#71717a"
+			                      }
+			                    }
+			                  }
+			                ]
+			              }
+			            ]
+			          },
+			          {
+			            "matcher": {
+			              "id": "byName",
+			              "options": "Quota (USD, 7d)"
+			            },
+			            "properties": [
+			              {
+			                "id": "unit",
+			                "value": "currencyUSD"
+			              },
+			              {
+			                "id": "decimals",
+			                "value": 0
+			              },
+			              {
+			                "id": "color",
+			                "value": {
+			                  "mode": "continuous-GrYlRd"
+			                }
+			              },
+			              {
+			                "id": "custom.cellOptions",
+			                "value": {
+			                  "type": "gauge",
+			                  "mode": "gradient"
+			                }
+			              },
+			              {
+			                "id": "displayName",
+			                "value": "Quota (USD, 7d)"
+			              }
+			            ]
+			          },
+				          {
+				            "matcher": {
+				              "id": "byName",
+				              "options": "Spend (USD, since reset)"
+				            },
+				            "properties": [
+				              {
+				                "id": "displayName",
+				                "value": "Spend (USD, since reset)"
+				              },
+			              {
+			                "id": "unit",
+			                "value": "currencyUSD"
+			              },
+			              {
+			                "id": "decimals",
+			                "value": 0
+			              },
+			              {
+			                "id": "custom.cellOptions",
+			                "value": {
+			                  "type": "auto"
+			                }
+			              }
+			            ]
+			          },
+					          {
+					            "matcher": {
+					              "id": "byName",
+					              "options": "Δpp (since reset)"
+					            },
+					            "properties": [
+					              {
+					                "id": "displayName",
+					                "value": "Used (pp, since reset)"
+					              },
+					              {
+					                "id": "unit",
+					                "value": "suffix:pp"
+					              },
+			              {
+			                "id": "decimals",
+			                "value": 0
+			              },
+			              {
+			                "id": "custom.cellOptions",
+			                "value": {
+			                  "type": "auto"
+			                }
+			              }
+			            ]
+			          },
+			          {
+			            "matcher": {
+			              "id": "byName",
+			              "options": "Time"
+			            },
+			            "properties": [
+			              {
+			                "id": "custom.hideFrom",
+			                "value": {
+			                  "viz": true,
+			                  "legend": true,
+			                  "tooltip": true
+			                }
+			              }
+			            ]
+			          },
+			          {
+			            "matcher": {
+			              "id": "byName",
+			              "options": "account_id"
+			            },
+			            "properties": [
+			              {
+			                "id": "custom.hideFrom",
+			                "value": {
+			                  "viz": true,
+			                  "legend": true,
+			                  "tooltip": true
+			                }
+			              }
+			            ]
+			          },
+			          {
+			            "matcher": {
+			              "id": "byName",
+			              "options": "display"
+			            },
+			            "properties": [
+			              {
+			                "id": "custom.hideFrom",
+			                "value": {
+			                  "viz": true,
+			                  "legend": true,
+			                  "tooltip": true
+			                }
+			              }
+			            ]
+			          },
+			          {
+			            "matcher": {
+			              "id": "byName",
+			              "options": "plan_type"
+			            },
+			            "properties": [
+			              {
+			                "id": "custom.hideFrom",
+			                "value": {
+			                  "viz": true,
+			                  "legend": true,
+			                  "tooltip": true
+			                }
+			              }
+			            ]
+			          }
+			        ]
+			      },
+			      "options": {
+			        "showHeader": true,
+			        "cellHeight": "sm",
+			        "sortBy": [
+			          {
+			            "displayName": "Quota (USD, 7d)",
+			            "desc": true
+			          }
+			        ]
+			      },
+			      "transformations": [
+			        {
+			          "id": "joinByField",
+			          "options": {
+			            "byField": "account_id",
+			            "mode": "inner"
+			          }
+			        },
+			        {
+			          "id": "organize",
+			          "options": {
+			            "excludeByName": {
+			              "Time": true,
+			              "Time 1": true,
+			              "Time 2": true,
+			              "account_id": true,
+			              "display": true,
+			              "display 1": true,
+			              "display 2": true,
+			              "plan_type": true,
+			              "plan_type 1": true,
+			              "plan_type 2": true
+			            },
+				            "renameByName": {
+				              "Value": "Quota (USD, 7d)",
+				              "Value #A": "Quota (USD, 7d)",
+				              "Value 1": "Spend (USD, since reset)",
+				              "Value #B": "Spend (USD, since reset)",
+				              "Value 2": "Δpp (since reset)",
+				              "Value #C": "Δpp (since reset)"
+				            },
+				            "indexByName": {
+				              "account_display": 0,
+				              "Quota (USD, 7d)": 1,
+				              "Spend (USD, since reset)": 2,
+				              "Δpp (since reset)": 3
+				            }
+				          }
+				        }
+				      ],
       "targets": [
-		        {
-			          "refId": "A",
-			          "expr": "label_replace(topk(20, sum by (account_id) (increase(codex_lb_proxy_account_cost_usd_total{account_id=~\"$account\",api=~\"$api\"}[1d])) / clamp_min(((max by (account_id) (max_over_time(codex_lb_secondary_used_percent{account_id=~\"$account\"}[1d]))) - (min by (account_id) (min_over_time(codex_lb_secondary_used_percent{account_id=~\"$account\"}[1d])))) / 100, 0.01)) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
-			          "legendFormat": "{{display}}"
-			        }
+        {
+          "refId": "A",
+          "instant": true,
+          "format": "table",
+      "expr": "topk(20, max by (account_id, account_display) (label_join((codex_lb_secondary_implied_quota_usd_7d{account_id=~\"$account\"} and on(account_id) (codex_lb_secondary_used_percent_delta_pp_7d{account_id=~\"$account\"} >= $secondary_quota_min_pp)) * on(account_id) group_left(display, plan_type) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\"), \"plan_type\", \"unknown\", \"account_id\", \"(.*)\")), \"account_display\", \"::\", \"plan_type\", \"display\")))"
+        },
+        {
+          "refId": "B",
+          "instant": true,
+          "format": "table",
+          "expr": "max by (account_id) (codex_lb_proxy_account_cost_usd_7d{account_id=~\"$account\"})"
+        },
+        {
+          "refId": "C",
+          "instant": true,
+          "format": "table",
+          "expr": "max by (account_id) (codex_lb_secondary_used_percent_delta_pp_7d{account_id=~\"$account\"})"
+        }
       ]
     },
     {
@@ -423,16 +739,16 @@
       "collapsed": false,
       "panels": []
     },
-		    {
-		      "id": 28,
-		      "type": "timeseries",
-		      "title": "Cost/day (USD, total + 7d avg)",
-		      "gridPos": {
-		        "x": 0,
-		        "y": 82,
-		        "w": 12,
-		        "h": 7
-		      },
+			    {
+			      "id": 28,
+			      "type": "timeseries",
+			      "title": "Cost/day (USD, total + 7d avg)",
+			      "gridPos": {
+			        "x": 0,
+			        "y": 82,
+			        "w": 12,
+			        "h": 7
+			      },
 		      "hideTimeOverride": true,
 		      "timeFrom": "now-30d/d",
 		      "fieldConfig": {
@@ -483,16 +799,16 @@
 		        }
 		      ]
 		    },
-	    {
-	      "id": 29,
-	      "type": "timeseries",
-	      "title": "Cost/day (USD, top accounts)",
-	      "gridPos": {
-	        "x": 12,
-	        "y": 82,
-	        "w": 12,
-	        "h": 7
-	      },
+		    {
+		      "id": 29,
+		      "type": "timeseries",
+		      "title": "Cost/day (USD, top accounts)",
+		      "gridPos": {
+		        "x": 12,
+		        "y": 82,
+		        "w": 12,
+		        "h": 7
+		      },
 	      "hideTimeOverride": true,
 	      "timeFrom": "now-30d/d",
 	      "targets": [
@@ -504,16 +820,16 @@
 			        }
 	      ]
 	    },
-		    {
-		      "id": 30,
-		      "type": "timeseries",
-		      "title": "Requests/day (total + 7d avg)",
-		      "gridPos": {
-		        "x": 0,
-		        "y": 89,
-		        "w": 12,
-		        "h": 7
-		      },
+			    {
+			      "id": 30,
+			      "type": "timeseries",
+			      "title": "Requests/day (total + 7d avg)",
+			      "gridPos": {
+			        "x": 0,
+			        "y": 89,
+			        "w": 12,
+			        "h": 7
+			      },
 		      "hideTimeOverride": true,
 		      "timeFrom": "now-30d/d",
 		      "fieldConfig": {
@@ -564,16 +880,16 @@
 		        }
 		      ]
 		    },
-	    {
-	      "id": 31,
-	      "type": "timeseries",
-	      "title": "Requests/day (top accounts)",
-	      "gridPos": {
-	        "x": 12,
-	        "y": 89,
-	        "w": 12,
-	        "h": 7
-	      },
+		    {
+		      "id": 31,
+		      "type": "timeseries",
+		      "title": "Requests/day (top accounts)",
+		      "gridPos": {
+		        "x": 12,
+		        "y": 89,
+		        "w": 12,
+		        "h": 7
+		      },
 	      "hideTimeOverride": true,
 	      "timeFrom": "now-30d/d",
 	      "targets": [
@@ -585,29 +901,29 @@
 		        }
 	      ]
 	    },
-    {
-      "id": 32,
-      "type": "row",
-      "title": "Today so far (since midnight, browser TZ)",
-      "gridPos": {
-        "x": 0,
-        "y": 96,
-        "w": 24,
-        "h": 1
-      },
+		    {
+		      "id": 32,
+		      "type": "row",
+		      "title": "Today so far (since midnight, browser TZ)",
+		      "gridPos": {
+		        "x": 0,
+		        "y": 96,
+		        "w": 24,
+		        "h": 1
+		      },
       "collapsed": false,
       "panels": []
     },
-    {
-      "id": 33,
-      "type": "stat",
-      "title": "Cost today so far (USD)",
-      "gridPos": {
-        "x": 0,
-        "y": 97,
-        "w": 12,
-        "h": 6
-      },
+		    {
+		      "id": 33,
+		      "type": "stat",
+		      "title": "Cost today so far (USD)",
+		      "gridPos": {
+		        "x": 0,
+		        "y": 97,
+		        "w": 12,
+		        "h": 6
+		      },
       "options": {
         "graphMode": "none"
       },
@@ -621,16 +937,16 @@
         }
       ]
     },
-    {
-      "id": 34,
-      "type": "stat",
-      "title": "Requests today so far",
-      "gridPos": {
-        "x": 12,
-        "y": 97,
-        "w": 12,
-        "h": 6
-      },
+		    {
+		      "id": 34,
+		      "type": "stat",
+		      "title": "Requests today so far",
+		      "gridPos": {
+		        "x": 12,
+		        "y": 97,
+		        "w": 12,
+		        "h": 6
+		      },
       "options": {
         "graphMode": "none"
       },
@@ -644,16 +960,16 @@
         }
       ]
     },
-    {
-      "id": 35,
-      "type": "timeseries",
-      "title": "Cost/hr (USD, total, 1h buckets)",
-      "gridPos": {
-        "x": 0,
-        "y": 103,
-        "w": 24,
-        "h": 7
-      },
+		    {
+		      "id": 35,
+		      "type": "timeseries",
+		      "title": "Cost/hr (USD, total, 1h buckets)",
+		      "gridPos": {
+		        "x": 0,
+		        "y": 103,
+		        "w": 24,
+		        "h": 7
+		      },
       "hideTimeOverride": true,
       "timeFrom": "now/d",
       "fieldConfig": {

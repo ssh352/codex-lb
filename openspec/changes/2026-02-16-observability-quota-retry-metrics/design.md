@@ -2,16 +2,17 @@
 
 ## New metric families
 
-### Secondary percent consumption (monotonic)
+### Secondary quota (SQLite-derived, 7d)
 
-Secondary `used_percent` is a gauge and can decrease (window reset). To enable robust “percent consumed” deltas in
-PromQL, export a monotonic counter that increments on positive progress and handles weekly reset boundaries:
+Secondary `used_percent` is a gauge and can decrease (window reset). For implied quota estimation, the dashboard uses
+SQLite-derived 7-day gauges so the result does not depend on Prometheus retention or the proxy process uptime:
 
-- `codex_lb_secondary_used_percent_increase_total{account_id}`
-- `codex_lb_secondary_resets_total{account_id}`
+- `codex_lb_proxy_account_cost_usd_7d{account_id}`
+- `codex_lb_secondary_used_percent_delta_pp_7d{account_id}`
+- `codex_lb_secondary_implied_quota_usd_7d{account_id}`
 
-Reset detection uses the `secondary_reset_at_epoch` timestamp: if it advances by more than 1 hour between samples,
-the window is treated as reset and the counter increments by `(100 - prev_used) + cur_used`.
+The companion counter `codex_lb_secondary_resets_total{account_id}` remains available as a best-effort signal for reset
+detection, but is not required for the 7d estimate.
 
 ### Proxy retries
 
@@ -35,18 +36,11 @@ Export counters for successful requests where cost could not be computed:
 
 ## PromQL: implied secondary quota (USD)
 
-Given a time range `$range` (e.g. `1d`), implied quota is:
+Prefer the direct gauge:
 
-```
-increase(codex_lb_proxy_account_cost_usd_total[$range])
-/
-(increase(codex_lb_secondary_used_percent_increase_total[$range]) / 100)
-```
-
-This is intentionally “implied” (depends on workload/model mix and cache ratio).
+`codex_lb_secondary_implied_quota_usd_7d`
 
 ## Cardinality
 
 - New metrics use `{account_id}` only (optionally plus `{api,error_class}`); no `{account_id,model}` combinations.
 - Reasons and error classes are bounded sets.
-

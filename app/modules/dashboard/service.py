@@ -92,7 +92,10 @@ class DashboardService:
 
         metrics = get_metrics()
         metrics.refresh_account_identity_gauges(
-            [AccountIdentityObservation(account_id=account.id, email=account.email) for account in accounts],
+            [
+                AccountIdentityObservation(account_id=account.id, email=account.email, plan_type=account.plan_type)
+                for account in accounts
+            ],
             mode=get_settings().metrics_account_identity_mode,
         )
 

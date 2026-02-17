@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Mapping, Protocol
 
+from app.core.auth import DEFAULT_PLAN
 from app.core.auth.refresh import RefreshError
 from app.core.clients.usage import UsageFetchError, fetch_usage
 from app.core.config.settings import get_settings
 from app.core.crypto import TokenEncryptor
+from app.core.plan_types import coerce_account_plan_type
 from app.core.usage.models import UsagePayload
 from app.core.utils.request_id import get_request_id
 from app.core.utils.time import utcnow
@@ -51,6 +53,7 @@ class UsageUpdater:
         accounts_repo: AccountsRepositoryPort | None = None,
     ) -> None:
         self._usage_repo = usage_repo
+        self._accounts_repo = accounts_repo
         self._encryptor = TokenEncryptor()
         self._auth_manager = AuthManager(accounts_repo) if accounts_repo else None
 
@@ -155,6 +158,31 @@ class UsageUpdater:
         await self._persist_payload(account, payload)
 
     async def _persist_payload(self, account: Account, payload: UsagePayload) -> None:
+        if self._accounts_repo is not None and payload.plan_type is not None:
+            updated_plan_type = coerce_account_plan_type(payload.plan_type, account.plan_type or DEFAULT_PLAN)
+            if updated_plan_type != account.plan_type:
+                account.plan_type = updated_plan_type
+                try:
+                    await self._accounts_repo.update_tokens(
+                        account.id,
+                        access_token_encrypted=account.access_token_encrypted,
+                        refresh_token_encrypted=account.refresh_token_encrypted,
+                        id_token_encrypted=account.id_token_encrypted,
+                        last_refresh=account.last_refresh,
+                        plan_type=account.plan_type,
+                        email=account.email,
+                        chatgpt_account_id=account.chatgpt_account_id,
+                    )
+                    invalidate_accounts_list_cache()
+                except Exception:
+                    logger.warning(
+                        "Failed to persist plan type from usage payload account_id=%s plan_type=%s request_id=%s",
+                        account.id,
+                        account.plan_type,
+                        get_request_id(),
+                        exc_info=True,
+                    )
+
         rate_limit = payload.rate_limit
         if rate_limit is None:
             return

@@ -7,6 +7,7 @@ from typing import Final, Iterable, Literal, Sequence
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
 from app.core import usage as usage_core
+from app.core.plan_types import canonicalize_account_plan_type
 from app.core.usage.logs import cost_from_log
 from app.core.usage.pricing import get_pricing_for_model
 from app.core.usage.waste_pacing import SecondaryWastePacingInput
@@ -38,6 +39,14 @@ class SecondaryUsagePercentState:
 class AccountIdentityObservation:
     account_id: str
     email: str
+    plan_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class SecondaryQuotaEstimateObservation:
+    account_id: str
+    cost_usd_7d: float
+    used_delta_pp_7d: float
 
 
 def _error_class(error_code: str | None) -> str:
@@ -89,7 +98,8 @@ class Metrics:
         self._known_account_ids: set[str] = set()
         self._secondary_usage_state: dict[str, SecondaryUsagePercentState] = {}
         self._known_account_identity_ids: set[str] = set()
-        self._account_identity_state: dict[str, str] = {}
+        self._account_identity_state: dict[str, tuple[str, str]] = {}
+        self._known_secondary_quota_ids: set[str] = set()
 
         self._proxy_requests_total = Counter(
             "codex_lb_proxy_requests_total",
@@ -175,7 +185,7 @@ class Metrics:
         self._account_identity = Gauge(
             "codex_lb_account_identity",
             "Account identity labels for dashboards (display is configurable).",
-            labelnames=("account_id", "display"),
+            labelnames=("account_id", "display", "plan_type"),
             registry=self._registry,
         )
 
@@ -232,13 +242,6 @@ class Metrics:
             labelnames=("account_id",),
             registry=self._registry,
         )
-        self._secondary_used_percent_increase_total = Counter(
-            "codex_lb_secondary_used_percent_increase_total",
-            "Monotonic increase of secondary used percent (percentage points) per account. Increments on positive "
-            "progress; on detected window reset adds (100 - prev_used) + cur_used.",
-            labelnames=("account_id",),
-            registry=self._registry,
-        )
         self._secondary_resets_total = Counter(
             "codex_lb_secondary_resets_total",
             "Count of detected secondary window resets per account (used percent decreases and reset_at advances).",
@@ -260,6 +263,27 @@ class Metrics:
         self._secondary_remaining_credits = Gauge(
             "codex_lb_secondary_remaining_credits",
             "Estimated secondary remaining credits per account.",
+            labelnames=("account_id",),
+            registry=self._registry,
+        )
+
+        self._secondary_cost_usd_7d = Gauge(
+            "codex_lb_proxy_account_cost_usd_7d",
+            "Estimated proxy cost (USD) since the current secondary weekly cycle start, clipped to "
+            "the last 7 days (SQLite-derived).",
+            labelnames=("account_id",),
+            registry=self._registry,
+        )
+        self._secondary_used_percent_delta_pp_7d = Gauge(
+            "codex_lb_secondary_used_percent_delta_pp_7d",
+            "Latest secondary used_percent (percentage points since reset start) for the current "
+            "cycle, clipped to the last 7 days (SQLite-derived).",
+            labelnames=("account_id",),
+            registry=self._registry,
+        )
+        self._secondary_implied_quota_usd_7d = Gauge(
+            "codex_lb_secondary_implied_quota_usd_7d",
+            "Implied secondary quota (USD) = cost_usd_7d / (used_pp_7d/100).",
             labelnames=("account_id",),
             registry=self._registry,
         )
@@ -386,20 +410,25 @@ class Metrics:
         removed = self._known_account_identity_ids - current_ids
         if removed:
             for account_id in removed:
-                prev_display = self._account_identity_state.pop(account_id, None)
-                if prev_display is not None:
-                    self._account_identity.remove(account_id, prev_display)
+                prev = self._account_identity_state.pop(account_id, None)
+                if prev is not None:
+                    prev_display, prev_plan_type = prev
+                    self._account_identity.remove(account_id, prev_display, prev_plan_type)
             self._known_account_identity_ids = set(current_ids)
         else:
             self._known_account_identity_ids = set(current_ids)
 
         for item in observations:
             display = item.email if mode == "email" else item.account_id
-            prev_display = self._account_identity_state.get(item.account_id)
-            if prev_display is not None and prev_display != display:
-                self._account_identity.remove(item.account_id, prev_display)
-            self._account_identity.labels(account_id=item.account_id, display=display).set(1.0)
-            self._account_identity_state[item.account_id] = display
+            canonical_plan_type = canonicalize_account_plan_type(item.plan_type)
+            plan_type = canonical_plan_type.lower() if canonical_plan_type else "unknown"
+            prev = self._account_identity_state.get(item.account_id)
+            if prev is not None:
+                prev_display, prev_plan_type = prev
+                if prev_display != display or prev_plan_type != plan_type:
+                    self._account_identity.remove(item.account_id, prev_display, prev_plan_type)
+            self._account_identity.labels(account_id=item.account_id, display=display, plan_type=plan_type).set(1.0)
+            self._account_identity_state[item.account_id] = (display, plan_type)
 
     def refresh_secondary_usage_gauges(
         self,
@@ -469,6 +498,33 @@ class Metrics:
                 reset_at_epoch=reset_at,
             )
 
+    def refresh_secondary_quota_estimates_7d(
+        self,
+        observations: Sequence[SecondaryQuotaEstimateObservation],
+    ) -> None:
+        current_ids = {item.account_id for item in observations if item.account_id}
+        removed = self._known_secondary_quota_ids - current_ids
+        if removed:
+            for account_id in removed:
+                self._secondary_cost_usd_7d.remove(account_id)
+                self._secondary_used_percent_delta_pp_7d.remove(account_id)
+                self._secondary_implied_quota_usd_7d.remove(account_id)
+            self._known_secondary_quota_ids = set(current_ids)
+        else:
+            self._known_secondary_quota_ids = set(current_ids)
+
+        for item in observations:
+            account_id = item.account_id
+            cost_usd = float(item.cost_usd_7d)
+            used_delta_pp = float(item.used_delta_pp_7d)
+            self._secondary_cost_usd_7d.labels(account_id=account_id).set(cost_usd)
+            self._secondary_used_percent_delta_pp_7d.labels(account_id=account_id).set(used_delta_pp)
+            if used_delta_pp > 0:
+                implied = cost_usd / (used_delta_pp / 100.0)
+                self._secondary_implied_quota_usd_7d.labels(account_id=account_id).set(float(implied))
+            else:
+                self._secondary_implied_quota_usd_7d.labels(account_id=account_id).set(math.nan)
+
     def _observe_secondary_used_percent_progress(
         self,
         *,
@@ -500,12 +556,7 @@ class Metrics:
                 and int(reset_at_epoch) > int(prev.reset_at_epoch) + 3600
             ):
                 self._secondary_resets_total.labels(account_id=account_id).inc()
-                delta = (100.0 - prev.used_percent) + used_value
-            else:
-                delta = 0.0
-
-        if delta > 0:
-            self._secondary_used_percent_increase_total.labels(account_id=account_id).inc(float(delta))
+            # Otherwise treat it as noise and do not count as a reset.
 
         self._secondary_usage_state[account_id] = SecondaryUsagePercentState(
             used_percent=used_value,

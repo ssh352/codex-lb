@@ -77,14 +77,55 @@ To display `display` alongside account metrics in PromQL, join on `account_id`:
 
 “Implied” quota is computed from observed spend divided by observed secondary percent consumption over the same range.
 This is workload-dependent (model mix + caching), so treat it as an operational estimate.
+For low-consumption accounts (very small secondary % movement), the estimate is inherently unstable and can be dominated
+by rounding and scrape noise; prefer a longer lookback window and/or suppress the metric unless secondary consumption
+exceeds a minimum number of percentage points.
 
-`codex_lb_secondary_used_percent` is a gauge and can decrease on window reset. Use the monotonic counter
-`codex_lb_secondary_used_percent_increase_total` for deltas; it increments on positive progress and treats a
-weekly reset as `(100 - prev_used) + cur_used` when the `reset_at` timestamp advances materially. The companion
-counter `codex_lb_secondary_resets_total` counts detected resets.
+To avoid dependence on Prometheus retention and process uptime, codex-lb exports SQLite-derived 7d gauges for this
+estimate:
 
-- Implied secondary quota (USD) by account (1 day window):
-  - `increase(codex_lb_proxy_account_cost_usd_total[1d]) / (increase(codex_lb_secondary_used_percent_increase_total[1d]) / 100)`
+- `codex_lb_proxy_account_cost_usd_7d{account_id}`: spend in USD since the most recent weekly secondary reset (as
+  observed in `usage_history`), clipped to the last 7 days. This is computed from SQLite `request_logs` (token sums ×
+  pricing) over the inferred cycle range; it does not include any usage that occurred outside codex-lb.
+- `codex_lb_secondary_used_percent_delta_pp_7d{account_id}`: secondary used% consumption (percentage points) since the
+  most recent weekly secondary reset (as observed in `usage_history`), clipped to the last 7 days. In practice this is
+  equivalent to the latest observed `used_percent` for the current cycle (clamped to `[0, 100]`). It is not derived
+  from per-request logs; it comes from the latest `usage_history` snapshot.
+- `codex_lb_secondary_implied_quota_usd_7d{account_id}`: the derived ratio (`spend / (delta_pp/100)`), set to `NaN`
+  when `delta_pp == 0`.
+
+When an account’s secondary meter has already advanced materially in the current cycle but there are no proxy request
+logs near the cycle start, the implied quota estimate can be misleading (spend is incomplete relative to the meter
+movement). codex-lb may suppress the 7d quota estimate for such accounts.
+
+More precisely, codex-lb suppresses the 7d quota estimate when it observes a likely cycle-start mismatch:
+
+- Let `cycle_start = reset_at - window_minutes*60` for the current cycle (as inferred from the latest `usage_history`
+  snapshot).
+- Let `(t0, u0)` be the first `usage_history` sample time/value observed in that same cycle.
+- Let `n0` be the number of `request_logs` rows in `[cycle_start, t0)`.
+
+If `(t0 - cycle_start)` is larger than a grace window (to tolerate restarts / delayed sampling), `u0` is already
+materially >0 (e.g. ≥5pp), and `n0 == 0`, then the provider meter advanced without any proxy spend being recorded for
+that early interval. This does not prove "external usage" as fact (codex-lb could have been down or misconfigured), but
+it *does* mean `spend / (used_pp/100)` would be biased low, so codex-lb suppresses the estimate instead of emitting a
+misleading weekly quota.
+
+Operationally, this is why two accounts can differ:
+
+- Account A (e.g. `bch…`) at `60pp` is still estimable: codex-lb has request logs covering the same cycle interval as the
+  meter movement, so the estimate is an extrapolation: `quota ≈ spend_since_reset / 0.60`.
+- Account B (e.g. `ve…`) with a first observed cycle sample already at `18pp` but no request logs before that sample is
+  suppressed: the denominator includes early-cycle usage that the numerator cannot include, so the implied quota would
+  be a lower bound rather than a good estimate.
+
+- Implied secondary quota (USD) by account (7 day window, SSOT):
+  - Prefer the direct gauge:
+    - `codex_lb_secondary_implied_quota_usd_7d`
+  - Or compute it from inputs:
+    - `codex_lb_proxy_account_cost_usd_7d / (codex_lb_secondary_used_percent_delta_pp_7d / 100)`
+  - Suppress “thin-signal” accounts (e.g. require ≥ 5pp movement):
+    - `(codex_lb_secondary_implied_quota_usd_7d and on(account_id) (codex_lb_secondary_used_percent_delta_pp_7d >= 5))`
 
 #### Activity by hour
 

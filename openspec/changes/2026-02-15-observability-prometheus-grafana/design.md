@@ -56,7 +56,6 @@ Target scale: <= ~300 accounts.
 Per-account (label: `{account_id}`):
 
 - `codex_lb_secondary_used_percent`
-- `codex_lb_secondary_used_percent_increase_total`
 - `codex_lb_secondary_resets_total`
 - `codex_lb_secondary_reset_at_seconds`
 - `codex_lb_secondary_window_minutes`

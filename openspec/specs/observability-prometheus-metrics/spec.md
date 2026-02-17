@@ -46,18 +46,48 @@ The server MUST export the following metric families (names are normative):
 #### Accounts
 
 - `codex_lb_accounts_total{status}`
-- `codex_lb_account_identity{account_id,display}`
+- `codex_lb_account_identity{account_id,display,plan_type}`
 
 #### Secondary usage (account)
 
 Per-account (label: `{account_id}`):
 
 - `codex_lb_secondary_used_percent{account_id}`
-- `codex_lb_secondary_used_percent_increase_total{account_id}`
 - `codex_lb_secondary_resets_total{account_id}`
 - `codex_lb_secondary_reset_at_seconds{account_id}`
 - `codex_lb_secondary_window_minutes{account_id}`
 - `codex_lb_secondary_remaining_credits{account_id}`
+- `codex_lb_proxy_account_cost_usd_7d{account_id}`
+- `codex_lb_secondary_used_percent_delta_pp_7d{account_id}`
+- `codex_lb_secondary_implied_quota_usd_7d{account_id}`
+
+### Secondary quota estimate semantics (SQLite-derived, 7d)
+
+For a given `account_id`, the following metrics are computed from SQLite and reflect the current secondary weekly cycle
+as observed via `usage_history`:
+
+- `codex_lb_proxy_account_cost_usd_7d{account_id}` MUST be the sum of priced proxy request costs in USD since the
+  current cycle start, clipped to the last 7 days.
+- `codex_lb_secondary_used_percent_delta_pp_7d{account_id}` MUST equal the latest observed secondary `used_percent`
+  value for the current cycle, clamped to the range `[0, 100]`.
+- `codex_lb_secondary_implied_quota_usd_7d{account_id}` MUST be computed as:
+  - `cost_usd_7d / (used_pp_7d / 100)` when `used_pp_7d > 0`
+  - `NaN` when `used_pp_7d == 0`
+
+To avoid emitting biased low quota estimates when the provider meter appears to have advanced before codex-lb recorded
+any proxy spend for the start of the cycle, the server MUST suppress the 7d quota estimate for an account when all of
+the following are true:
+
+- The first `usage_history` sample observed in the current cycle occurs more than a grace window after the inferred
+  cycle start, AND
+- That first sample's `used_percent` is already materially >0 (percentage points), AND
+- There are zero proxy `request_logs` entries in `[cycle_start, first_usage_sample_time)`.
+
+When suppressed, the server MUST NOT emit any of:
+
+- `codex_lb_proxy_account_cost_usd_7d{account_id}`
+- `codex_lb_secondary_used_percent_delta_pp_7d{account_id}`
+- `codex_lb_secondary_implied_quota_usd_7d{account_id}`
 
 #### Load balancer routing
 

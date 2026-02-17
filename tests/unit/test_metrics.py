@@ -7,6 +7,7 @@ from app.core.metrics.metrics import (
     AccountIdentityObservation,
     Metrics,
     ProxyRequestObservation,
+    SecondaryQuotaEstimateObservation,
 )
 from app.core.usage.waste_pacing import SecondaryWastePacingInput
 
@@ -133,7 +134,7 @@ def test_metrics_refreshes_account_identity() -> None:
     registry = CollectorRegistry(auto_describe=True)
     metrics = Metrics(registry=registry)
     metrics.refresh_account_identity_gauges(
-        [AccountIdentityObservation(account_id="acc_a", email="a@example.com")],
+        [AccountIdentityObservation(account_id="acc_a", email="a@example.com", plan_type="plus")],
         mode="email",
     )
     rendered = metrics.render().decode("utf-8")
@@ -141,7 +142,7 @@ def test_metrics_refreshes_account_identity() -> None:
         _sample_value(
             rendered,
             "codex_lb_account_identity",
-            {"account_id": "acc_a", "display": "a@example.com"},
+            {"account_id": "acc_a", "display": "a@example.com", "plan_type": "plus"},
         )
         == 1.0
     )
@@ -193,42 +194,7 @@ def test_metrics_refreshes_secondary_usage_gauges() -> None:
     assert "codex_lb_secondary_delta_needed_cph_total" not in rendered
     assert "codex_lb_secondary_accounts_evaluated" not in rendered
     assert "codex_lb_secondary_accounts_at_risk" not in rendered
-
-    metrics.refresh_secondary_usage_gauges(
-        status_values=["active"],
-        waste_inputs=[
-            SecondaryWastePacingInput(
-                account_id="acc_inc",
-                plan_type="plus",
-                secondary_used_percent=10.0,
-                secondary_reset_at_epoch=now_epoch + 3_600,
-                secondary_window_minutes=10080,
-            ),
-        ],
-        now_epoch=now_epoch,
-    )
-    metrics.refresh_secondary_usage_gauges(
-        status_values=["active"],
-        waste_inputs=[
-            SecondaryWastePacingInput(
-                account_id="acc_inc",
-                plan_type="plus",
-                secondary_used_percent=60.0,
-                secondary_reset_at_epoch=now_epoch + 3_600,
-                secondary_window_minutes=10080,
-            ),
-        ],
-        now_epoch=now_epoch,
-    )
-    rendered = metrics.render().decode("utf-8")
-    assert (
-        _sample_value(
-            rendered,
-            "codex_lb_secondary_used_percent_increase_total",
-            {"account_id": "acc_inc"},
-        )
-        == 50.0
-    )
+    assert "codex_lb_secondary_used_percent_increase_total" not in rendered
 
     metrics.refresh_secondary_usage_gauges(
         status_values=["active"],
@@ -265,14 +231,25 @@ def test_metrics_refreshes_secondary_usage_gauges() -> None:
         )
         == 1.0
     )
-    assert (
-        _sample_value(
-            rendered,
-            "codex_lb_secondary_used_percent_increase_total",
-            {"account_id": "acc_reset"},
-        )
-        == 20.0
+    assert "codex_lb_secondary_used_percent_increase_total" not in rendered
+
+
+def test_metrics_refreshes_secondary_quota_estimates_7d() -> None:
+    registry = CollectorRegistry(auto_describe=True)
+    metrics = Metrics(registry=registry)
+    metrics.refresh_secondary_quota_estimates_7d(
+        [
+            SecondaryQuotaEstimateObservation(
+                account_id="acc_a",
+                cost_usd_7d=57.0,
+                used_delta_pp_7d=10.0,
+            )
+        ]
     )
+    rendered = metrics.render().decode("utf-8")
+    assert _sample_value(rendered, "codex_lb_proxy_account_cost_usd_7d", {"account_id": "acc_a"}) == 57.0
+    assert _sample_value(rendered, "codex_lb_secondary_used_percent_delta_pp_7d", {"account_id": "acc_a"}) == 10.0
+    assert _sample_value(rendered, "codex_lb_secondary_implied_quota_usd_7d", {"account_id": "acc_a"}) == 570.0
 
 
 def test_metrics_observes_load_balancer_events() -> None:
