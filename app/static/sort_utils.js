@@ -73,7 +73,16 @@
 
 		const key = String(sortKey || "email");
 		const direction = String(sortDirection || "asc") === "desc" ? -1 : 1;
+		// Email/ID/Plan behave like a traditional directory table: pure sort by the selected
+		// column across *all* rows. Ops-centric keys keep "routable" accounts clustered
+		// at the top by bucketing quota-exceeded rows at the bottom.
+		const shouldBucketExceeded =
+			key === "status" ||
+			key === "remainingSecondaryPercent" ||
+			key === "quotaResetSecondary";
 		const isQuotaExceeded = (account) => {
+			// Treat both explicit statuses and usage-derived exhaustion as "quota exceeded"
+			// for sorting purposes.
 			const status = String(account?.status ?? "").trim().toLowerCase();
 			if (status === "exceeded" || status === "quota_exceeded") {
 				return true;
@@ -89,16 +98,23 @@
 		};
 
 		return list.sort((a, b) => {
-			const aExceeded = isQuotaExceeded(a);
-			const bExceeded = isQuotaExceeded(b);
-			if (aExceeded !== bExceeded) {
-				return aExceeded ? 1 : -1;
-			}
-			if (aExceeded && bExceeded) {
-				const exceededDir = key === "quotaResetSecondary" ? direction : 1;
-				const byReset = compareKey(a, b, "quotaResetSecondary", exceededDir);
-				if (byReset !== 0) {
-					return byReset;
+			if (shouldBucketExceeded) {
+				const aExceeded = isQuotaExceeded(a);
+				const bExceeded = isQuotaExceeded(b);
+				if (aExceeded !== bExceeded) {
+					// Operator UX: keep routable accounts clustered at the top.
+					// Quota-exceeded accounts are usually non-actionable for routing, so bucket them
+					// at the bottom for ops-centric sorts.
+					return aExceeded ? 1 : -1;
+				}
+				if (aExceeded && bExceeded) {
+					// Within the exceeded bucket, order by the next secondary reset time so the
+					// accounts that recover sooner are easiest to find when investigating.
+					const exceededDir = key === "quotaResetSecondary" ? direction : 1;
+					const byReset = compareKey(a, b, "quotaResetSecondary", exceededDir);
+					if (byReset !== 0) {
+						return byReset;
+					}
 				}
 			}
 

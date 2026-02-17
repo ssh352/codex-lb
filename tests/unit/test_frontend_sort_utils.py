@@ -100,12 +100,68 @@ const accounts = [
     resetAtSecondary: '2026-01-01T00:00:00Z',
   },
 ];
+const sorted = sortAccounts(accounts, { sortKey: 'status', sortDirection: 'asc' });
+process.stdout.write(JSON.stringify(sorted.map(a => a.id)));
+""".strip()
+    )
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    # Ops-centric sorts bucket non-exceeded accounts first, then quota-exceeded accounts
+    # ordered by quota reset (earlier reset first).
+    assert payload == ["active-1", "active-2", "exceeded-sooner", "implicit-exceeded", "exceeded-later"]
+
+
+def test_sort_utils_email_is_pure_sort() -> None:
+    proc = _run_node(
+        """
+const { sortAccounts } = require('./app/static/sort_utils.js');
+const accounts = [
+  {
+    id: 'active-1',
+    email: 'b@example.com',
+    status: 'active',
+    usage: { secondaryRemainingPercent: 50 },
+    resetAtSecondary: '2026-01-03T00:00:00Z',
+  },
+  {
+    id: 'exceeded-later',
+    email: 'a@example.com',
+    status: 'quota_exceeded',
+    usage: { secondaryRemainingPercent: 0 },
+    resetAtSecondary: '2026-01-05T00:00:00Z',
+  },
+  {
+    id: 'active-2',
+    email: 'd@example.com',
+    status: 'active',
+    usage: { secondaryRemainingPercent: 25 },
+    resetAtSecondary: '2026-01-04T00:00:00Z',
+  },
+  {
+    id: 'implicit-exceeded',
+    email: 'e@example.com',
+    status: 'active',
+    usage: { secondaryRemainingPercent: 0 },
+    resetAtSecondary: '2026-01-02T00:00:00Z',
+  },
+  {
+    id: 'exceeded-sooner',
+    email: 'c@example.com',
+    status: 'quota_exceeded',
+    usage: { secondaryRemainingPercent: 0 },
+    resetAtSecondary: '2026-01-01T00:00:00Z',
+  },
+];
 const sorted = sortAccounts(accounts, { sortKey: 'email', sortDirection: 'asc' });
 process.stdout.write(JSON.stringify(sorted.map(a => a.id)));
 """.strip()
     )
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
-    # Non-exceeded accounts come first (sorted by email), then quota exceeded accounts
-    # sorted by quota reset (earlier reset first).
-    assert payload == ["active-1", "active-2", "exceeded-sooner", "implicit-exceeded", "exceeded-later"]
+    assert payload == [
+        "exceeded-later",
+        "active-1",
+        "exceeded-sooner",
+        "active-2",
+        "implicit-exceeded",
+    ]
