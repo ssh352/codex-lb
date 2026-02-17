@@ -516,11 +516,15 @@
         "w": 12,
         "h": 6
       },
+      "options": {
+        "graphMode": "none"
+      },
       "hideTimeOverride": true,
       "timeFrom": "now/d",
       "targets": [
         {
           "refId": "A",
+          "instant": true,
           "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__range]))"
         }
       ]
@@ -535,11 +539,15 @@
         "w": 12,
         "h": 6
       },
+      "options": {
+        "graphMode": "none"
+      },
       "hideTimeOverride": true,
       "timeFrom": "now/d",
       "targets": [
         {
           "refId": "A",
+          "instant": true,
           "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[$__range]))"
         }
       ]
