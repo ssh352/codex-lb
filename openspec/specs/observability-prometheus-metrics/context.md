@@ -119,6 +119,10 @@ Operationally, this is why two accounts can differ:
   suppressed: the denominator includes early-cycle usage that the numerator cannot include, so the implied quota would
   be a lower bound rather than a good estimate.
 
+codex-lb may also suppress the estimate when it observes a mid-cycle mismatch: a large `used_percent` jump over a long
+gap where codex-lb recorded zero proxy `request_logs` in the same interval. This is a strong indicator that the meter
+advanced without matching proxy spend being recorded, so `spend / (used_pp/100)` would again be biased low.
+
 - Implied secondary quota (USD) by account (7 day window, SSOT):
   - Prefer the direct gauge:
     - `codex_lb_secondary_implied_quota_usd_7d`

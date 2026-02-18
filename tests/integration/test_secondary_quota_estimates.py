@@ -237,3 +237,106 @@ async def test_secondary_quota_estimates_exclude_missing_cycle_start_logs(async_
     assert _sample_value(body, "codex_lb_proxy_account_cost_usd_7d", {"account_id": account_id}) is None
     assert _sample_value(body, "codex_lb_secondary_used_percent_delta_pp_7d", {"account_id": account_id}) is None
     assert _sample_value(body, "codex_lb_secondary_implied_quota_usd_7d", {"account_id": account_id}) is None
+
+
+@pytest.mark.asyncio
+async def test_secondary_quota_estimates_exclude_unexplained_mid_cycle_jump(async_client, db_setup) -> None:
+    # Force the /metrics endpoint to refresh quota gauges even if other integration tests ran recently.
+    import app.modules.metrics.api as metrics_api
+
+    metrics_api._last_secondary_quota_refresh_monotonic = 0.0
+
+    now = utcnow().replace(microsecond=0)
+    account_id = "acc_quota_jump"
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(_make_account(account_id, "quota-jump@example.com"))
+
+    new_reset_at = to_epoch_seconds_assuming_utc(now + timedelta(days=2))
+    reset_start = (now - timedelta(days=5)).replace(microsecond=0)
+
+    async with SessionLocal() as session:
+        session.add_all(
+            [
+                # Cycle start samples are present quickly (so this does NOT trigger the cycle-start exclusion).
+                UsageHistory(
+                    account_id=account_id,
+                    recorded_at=(reset_start + timedelta(minutes=10)),
+                    window="secondary",
+                    used_percent=0.0,
+                    reset_at=new_reset_at,
+                    window_minutes=10080,
+                    input_tokens=None,
+                    output_tokens=None,
+                    credits_has=None,
+                    credits_unlimited=None,
+                    credits_balance=None,
+                ),
+                UsageHistory(
+                    account_id=account_id,
+                    recorded_at=(reset_start + timedelta(minutes=20)),
+                    window="secondary",
+                    used_percent=10.0,
+                    reset_at=new_reset_at,
+                    window_minutes=10080,
+                    input_tokens=None,
+                    output_tokens=None,
+                    credits_has=None,
+                    credits_unlimited=None,
+                    credits_balance=None,
+                ),
+                # Large unexplained jump after a long gap with no proxy logs.
+                UsageHistory(
+                    account_id=account_id,
+                    recorded_at=(reset_start + timedelta(days=2)),
+                    window="secondary",
+                    used_percent=70.0,
+                    reset_at=new_reset_at,
+                    window_minutes=10080,
+                    input_tokens=None,
+                    output_tokens=None,
+                    credits_has=None,
+                    credits_unlimited=None,
+                    credits_balance=None,
+                ),
+                UsageHistory(
+                    account_id=account_id,
+                    recorded_at=(now - timedelta(hours=1)),
+                    window="secondary",
+                    used_percent=100.0,
+                    reset_at=new_reset_at,
+                    window_minutes=10080,
+                    input_tokens=None,
+                    output_tokens=None,
+                    credits_has=None,
+                    credits_unlimited=None,
+                    credits_balance=None,
+                ),
+                # Proxy activity exists later in the cycle, but not during the long-gap interval above.
+                RequestLog(
+                    account_id=account_id,
+                    request_id="post-jump",
+                    requested_at=reset_start + timedelta(days=2, hours=1),
+                    model="gpt-5",
+                    input_tokens=1_000_000,
+                    output_tokens=100_000,
+                    cached_input_tokens=0,
+                    reasoning_tokens=None,
+                    reasoning_effort=None,
+                    latency_ms=1,
+                    status="success",
+                    error_code=None,
+                    error_message=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await async_client.get("/metrics")
+    assert response.status_code == 200
+    body = response.text
+
+    assert _sample_value(body, "codex_lb_proxy_account_cost_usd_7d", {"account_id": account_id}) is None
+    assert _sample_value(body, "codex_lb_secondary_used_percent_delta_pp_7d", {"account_id": account_id}) is None
+    assert _sample_value(body, "codex_lb_secondary_implied_quota_usd_7d", {"account_id": account_id}) is None

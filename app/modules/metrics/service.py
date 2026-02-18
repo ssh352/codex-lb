@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.core.metrics.metrics import SecondaryQuotaEstimateObservation
 from app.core.usage.pricing import UsageTokens, calculate_cost_from_usage, get_pricing_for_model
 from app.core.utils.time import utcnow
@@ -37,6 +38,14 @@ async def compute_secondary_quota_estimates_7d(
     # the estimate rather than emit a misleading number.
     _CYCLE_START_GRACE_MINUTES = 60.0
     _CYCLE_START_MIN_USED_PP = 5.0
+    _UNEXPLAINED_JUMP_MIN_DELTA_PP = 5.0
+    # We scale the "long gap" threshold with the configured usage refresh interval so it continues to mean
+    # "we missed many expected usage snapshots" if operators change `CODEX_LB_USAGE_REFRESH_INTERVAL_SECONDS`.
+    #
+    # The absolute floor keeps us in "hours" territory for the default 60s refresh, avoiding false positives from
+    # normal sampling jitter or brief outages.
+    refresh_interval_minutes = get_settings().usage_refresh_interval_seconds / 60.0
+    _UNEXPLAINED_JUMP_MIN_GAP_MINUTES = max(180.0, 10.0 * refresh_interval_minutes)
 
     # These quota-estimate inputs should reflect the current weekly cycle, clipped to the last 7 days.
     #
@@ -190,6 +199,82 @@ async def compute_secondary_quota_estimates_7d(
         n0 = int(logs_before_by_account_id.get(account_id, 0))
         if lag_minutes > _CYCLE_START_GRACE_MINUTES and u0 >= _CYCLE_START_MIN_USED_PP and n0 == 0:
             excluded_account_ids.add(account_id)
+
+    # Additional exclusion: suppress accounts with large secondary used% jumps across long gaps where codex-lb recorded
+    # no proxy request logs in the same interval. This indicates the provider meter advanced without matching proxy
+    # spend in SQLite (external usage or missing logs), which would bias the implied quota estimate low.
+    #
+    # We only flag long gaps (hours) to avoid false positives from small meter-update delays.
+    usage_with_prev = (
+        select(
+            UsageHistory.account_id.label("account_id"),
+            UsageHistory.recorded_at.label("recorded_at"),
+            UsageHistory.used_percent.label("used_percent"),
+            func.lag(UsageHistory.recorded_at)
+            .over(
+                partition_by=UsageHistory.account_id,
+                order_by=UsageHistory.recorded_at.asc(),
+            )
+            .label("prev_at"),
+            func.lag(UsageHistory.used_percent)
+            .over(
+                partition_by=UsageHistory.account_id,
+                order_by=UsageHistory.recorded_at.asc(),
+            )
+            .label("prev_used_percent"),
+        )
+        .select_from(UsageHistory)
+        .join(latest_usage, latest_usage.c.account_id == UsageHistory.account_id)
+        .where(
+            and_(
+                UsageHistory.account_id.in_(list(latest_by_account_id.keys())),
+                UsageHistory.window == "secondary",
+                UsageHistory.recorded_at >= since,
+                UsageHistory.recorded_at <= now,
+                UsageHistory.reset_at == latest_usage.c.reset_at,
+            )
+        )
+        .subquery()
+    )
+
+    delta_pp = usage_with_prev.c.used_percent - usage_with_prev.c.prev_used_percent
+    gap_minutes = (func.julianday(usage_with_prev.c.recorded_at) - func.julianday(usage_with_prev.c.prev_at)) * 24 * 60
+    jump_candidates = (
+        select(
+            usage_with_prev.c.account_id,
+            usage_with_prev.c.prev_at,
+            usage_with_prev.c.recorded_at.label("at"),
+            delta_pp.label("delta_pp"),
+        )
+        .where(
+            and_(
+                usage_with_prev.c.prev_at.is_not(None),
+                usage_with_prev.c.prev_used_percent.is_not(None),
+                delta_pp >= _UNEXPLAINED_JUMP_MIN_DELTA_PP,
+                gap_minutes >= _UNEXPLAINED_JUMP_MIN_GAP_MINUTES,
+            )
+        )
+        .subquery()
+    )
+
+    has_logs_in_jump_interval = (
+        select(1)
+        .select_from(RequestLog)
+        .where(
+            and_(
+                RequestLog.account_id == jump_candidates.c.account_id,
+                RequestLog.requested_at >= jump_candidates.c.prev_at,
+                RequestLog.requested_at < jump_candidates.c.at,
+            )
+        )
+        .limit(1)
+    )
+    unexplained_jump_accounts_stmt = (
+        select(jump_candidates.c.account_id).distinct().where(~has_logs_in_jump_interval.exists())
+    )
+    unexplained_rows = await session.execute(unexplained_jump_accounts_stmt)
+    for row in unexplained_rows.all():
+        excluded_account_ids.add(str(row.account_id))
 
     included_account_ids = [account_id for account_id in latest_by_account_id if account_id not in excluded_account_ids]
     if not included_account_ids:

@@ -83,6 +83,15 @@ the following are true:
 - That first sample's `used_percent` is already materially >0 (percentage points), AND
 - There are zero proxy `request_logs` entries in `[cycle_start, first_usage_sample_time)`.
 
+To avoid emitting biased low quota estimates when the provider meter advances by a large amount across a long period of
+zero proxy traffic (usage outside codex-lb, or missing logs), the server MUST also suppress the 7d quota estimate for
+an account when:
+
+- There exists an interval between two consecutive `usage_history` samples in the current cycle where:
+  - `used_percent` increases materially (percentage points), AND
+  - The time gap between samples is meaningfully large (hours), AND
+  - There are zero proxy `request_logs` entries in `[prev_sample_time, sample_time)`.
+
 When suppressed, the server MUST NOT emit any of:
 
 - `codex_lb_proxy_account_cost_usd_7d{account_id}`
