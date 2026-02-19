@@ -109,3 +109,9 @@ Prompting cue (use when writing docs):
    ```
 
 5. **Best Practices**: Commit often in small units. Do not commit directly to `main`. Always check `git diff` before pushing.
+
+## Skills
+
+- **Canonical skills location**: `~/.codex/skills` only.
+- Do not add or reference repo-local skills under `.claude/skills/` (or `.codex/skills/` if it points into `.claude/`).
+- When creating or updating a skill for this repo, install/update it under `~/.codex/skills/<skill-name>/` so it is discoverable consistently across projects.
