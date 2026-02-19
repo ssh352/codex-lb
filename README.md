@@ -142,6 +142,12 @@ One simple option is SSH port forwarding (no config changes needed if your clien
    - `uvx codex-lb --host 127.0.0.1 --port 2455`
 2. On each client machine, forward the proxy port (and the OAuth callback port for adding accounts):
    - `ssh -N -L 2455:127.0.0.1:2455 -L 1455:127.0.0.1:1455 <user>@<authority-host>`
+   - What this does:
+     - `-N` tells SSH not to run a remote command (just keep the tunnel open).
+     - Each `-L <local_port>:<remote_host>:<remote_port>` forwards a local port on the client to a host/port *reachable from the authority*:
+       - `-L 2455:127.0.0.1:2455` makes the client’s `http://127.0.0.1:2455` reach the authority’s `127.0.0.1:2455` (the `codex-lb` proxy).
+       - `-L 1455:127.0.0.1:1455` makes the client’s `127.0.0.1:1455` reach the authority’s `127.0.0.1:1455` (OAuth callback, only needed when adding accounts from the client).
+     - Replace `<user>` with your SSH username on the authority machine, and `<authority-host>` with its hostname/IP.
 3. On the client, open `http://127.0.0.1:2455/dashboard` and use Codex normally.
 
 Notes:
