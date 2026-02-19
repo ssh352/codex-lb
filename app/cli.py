@@ -8,17 +8,18 @@ import anyio
 import uvicorn
 import uvicorn.config
 
-from app.core.config.settings import get_settings
+from app.core.config.settings import Settings, get_settings
 
 
-def _build_log_config() -> dict:
+def _build_log_config(settings: Settings) -> dict:
     # Uvicorn's default LOGGING_CONFIG does not attach handlers to the `app.*` logger namespace.
     # Ensure application logs are visible on stdout without enabling noisy root logging.
     config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
     loggers = config.setdefault("loggers", {})
+    app_level = "DEBUG" if (settings.log_proxy_request_shape or settings.log_proxy_request_payload) else "INFO"
     loggers["app"] = {
         "handlers": ["default"],
-        "level": "INFO",
+        "level": app_level,
         "propagate": False,
     }
     return config
@@ -60,7 +61,7 @@ def main() -> None:
             port=args.port,
             ssl_certfile=args.ssl_certfile,
             ssl_keyfile=args.ssl_keyfile,
-            log_config=_build_log_config(),
+            log_config=_build_log_config(settings),
             # Keep access logs off by default for performance; controlled via `CODEX_LB_ACCESS_LOG_ENABLED`.
             access_log=settings.access_log_enabled,
         )

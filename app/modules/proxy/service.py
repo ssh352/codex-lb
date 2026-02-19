@@ -904,6 +904,8 @@ def _maybe_log_proxy_request_shape(
     settings = get_settings()
     if not settings.log_proxy_request_shape:
         return
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
 
     request_id = get_request_id()
     prompt_cache_key = getattr(payload, "prompt_cache_key", None)
@@ -923,7 +925,7 @@ def _maybe_log_proxy_request_shape(
     input_summary = _summarize_input(payload.input)
     header_keys = _interesting_header_keys(headers)
 
-    logger.warning(
+    logger.debug(
         "proxy_request_shape request_id=%s kind=%s model=%s stream=%s input=%s "
         "prompt_cache_key=%s prompt_cache_key_raw=%s fields=%s extra=%s headers=%s",
         request_id,
@@ -947,6 +949,8 @@ def _maybe_log_proxy_request_payload(
     settings = get_settings()
     if not settings.log_proxy_request_payload:
         return
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
 
     request_id = get_request_id()
     payload_dict = payload.model_dump(mode="json", exclude_none=True)
@@ -956,7 +960,7 @@ def _maybe_log_proxy_request_payload(
     header_keys = _interesting_header_keys(headers)
     payload_json = json.dumps(payload_dict, ensure_ascii=True, separators=(",", ":"))
 
-    logger.warning(
+    logger.debug(
         "proxy_request_payload request_id=%s kind=%s payload=%s headers=%s",
         request_id,
         kind,

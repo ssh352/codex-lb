@@ -168,7 +168,7 @@ def test_log_proxy_request_payload(monkeypatch, caplog):
 
     token = set_request_id("req_log_1")
     try:
-        caplog.set_level(logging.WARNING)
+        caplog.set_level(logging.DEBUG)
         proxy_service._maybe_log_proxy_request_payload("stream", payload, {"X-Request-Id": "req_log_1"})
     finally:
         reset_request_id(token)
