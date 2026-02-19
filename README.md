@@ -108,6 +108,7 @@ Enable request logging on the proxy:
 - `CODEX_LB_LOG_PROXY_REQUEST_SHAPE=1`: logs request shape (model, stream/compact, input summary, extra keys, and a hashed `prompt_cache_key`).
 - `CODEX_LB_LOG_PROXY_REQUEST_SHAPE_RAW_CACHE_KEY=1`: additionally logs a truncated raw `prompt_cache_key` (use with care).
 - `CODEX_LB_LOG_PROXY_REQUEST_PAYLOAD=1`: logs the full JSON payload (likely contains sensitive prompt data; use with care).
+- `CODEX_LB_REQUEST_LOGS_PROMPT_CACHE_KEY_HASH_ENABLED=1`: persists a short HMAC fingerprint of `prompt_cache_key` to SQLite `request_logs.prompt_cache_key_hash` for postmortem correlation (disabled by default; enable in `.env.local` when needed).
 
 ## Data
 

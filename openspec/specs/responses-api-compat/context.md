@@ -80,3 +80,27 @@ Non-streaming request/response:
   - `CODEX_LB_LOG_PROXY_REQUEST_SHAPE=1` (includes a hashed `prompt_cache_key`)
   - `CODEX_LB_LOG_PROXY_REQUEST_SHAPE_RAW_CACHE_KEY=1` (adds a truncated raw `prompt_cache_key`; use with care)
   - `CODEX_LB_LOG_PROXY_REQUEST_PAYLOAD=1` (logs full request JSON; likely contains sensitive prompt data)
+  - `CODEX_LB_REQUEST_LOGS_PROMPT_CACHE_KEY_HASH_ENABLED=1` (persists an HMAC fingerprint to SQLite `request_logs`)
+
+### Postmortem stickiness debugging (SQLite)
+
+If you need to answer questions after the fact (even when terminal logs were not retained), enable:
+
+- `CODEX_LB_REQUEST_LOGS_PROMPT_CACHE_KEY_HASH_ENABLED=1`
+
+This writes a short HMAC fingerprint (`hmac_sha256:...`) of the request `prompt_cache_key` into the main operational
+SQLite database (`~/.codex-lb/store.db`) in the `request_logs.prompt_cache_key_hash` column.
+
+This is disabled by default to keep the default installation low-noise and low-retention: it adds per-request metadata
+to the DB that is primarily useful for debugging and postmortems. Enable it explicitly (e.g. in `.env.local`) when you
+need this correlation.
+
+Example query:
+
+```sql
+SELECT requested_at, account_id, request_id, prompt_cache_key_hash
+FROM request_logs
+WHERE prompt_cache_key_hash = 'hmac_sha256:deadbeefcafe'
+ORDER BY requested_at DESC
+LIMIT 50;
+```

@@ -35,6 +35,7 @@ class RequestLogsRepository:
         cached_input_tokens: int | None = None,
         reasoning_tokens: int | None = None,
         reasoning_effort: str | None = None,
+        prompt_cache_key_hash: str | None = None,
     ) -> RequestLog:
         resolved_request_id = ensure_request_id(request_id)
         log = RequestLog(
@@ -50,6 +51,7 @@ class RequestLogsRepository:
             status=status,
             error_code=error_code,
             error_message=error_message,
+            prompt_cache_key_hash=prompt_cache_key_hash,
             requested_at=requested_at or utcnow(),
         )
         self._session.add(log)

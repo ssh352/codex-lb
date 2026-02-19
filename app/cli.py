@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import os
 
 import anyio
 import uvicorn
+import uvicorn.config
 
 from app.core.config.settings import get_settings
+
+
+def _build_log_config() -> dict:
+    # Uvicorn's default LOGGING_CONFIG does not attach handlers to the `app.*` logger namespace.
+    # Ensure application logs are visible on stdout without enabling noisy root logging.
+    config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
+    loggers = config.setdefault("loggers", {})
+    loggers["app"] = {
+        "handlers": ["default"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    return config
 
 
 def _parse_args() -> argparse.Namespace:
@@ -45,6 +60,7 @@ def main() -> None:
             port=args.port,
             ssl_certfile=args.ssl_certfile,
             ssl_keyfile=args.ssl_keyfile,
+            log_config=_build_log_config(),
             # Keep access logs off by default for performance; controlled via `CODEX_LB_ACCESS_LOG_ENABLED`.
             access_log=settings.access_log_enabled,
         )

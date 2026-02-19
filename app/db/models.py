@@ -78,6 +78,7 @@ class RequestLog(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_cache_key_hash: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class StickySession(Base):

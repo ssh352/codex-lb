@@ -27,6 +27,7 @@ class RequestLogCreate:
     status: str
     error_code: str | None
     error_message: str | None
+    prompt_cache_key_hash: str | None
     requested_at: datetime
 
 
@@ -82,6 +83,7 @@ def enqueue_request_log(entry: RequestLogCreate) -> bool:
         status=entry.status,
         error_code=entry.error_code,
         error_message=entry.error_message,
+        prompt_cache_key_hash=entry.prompt_cache_key_hash,
         requested_at=entry.requested_at,
     )
     ok = get_request_log_buffer().try_enqueue(normalized)

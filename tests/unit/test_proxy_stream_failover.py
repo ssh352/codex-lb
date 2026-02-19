@@ -106,8 +106,10 @@ async def test_streaming_retries_across_accounts_on_retryable_http_error() -> No
         ___: str,
         ____: bool,
         *,
+        prompt_cache_key_hash: str | None,
         api: str,
     ) -> AsyncIterator[str]:
+        del prompt_cache_key_hash
         if account.id == "acc1":
             raise _usage_limit_reached_error()
         yield "data: ok\n\n"
@@ -140,8 +142,10 @@ async def test_streaming_does_not_retry_after_emitting_output() -> None:
         ___: str,
         ____: bool,
         *,
+        prompt_cache_key_hash: str | None,
         api: str,
     ) -> AsyncIterator[str]:
+        del prompt_cache_key_hash
         yield "data: chunk\n\n"
         raise _usage_limit_reached_error()
 
@@ -174,8 +178,10 @@ async def test_streaming_propagates_retryable_http_error_when_no_failover_accoun
         ___: str,
         ____: bool,
         *,
+        prompt_cache_key_hash: str | None,
         api: str,
     ) -> AsyncIterator[str]:
+        del prompt_cache_key_hash
         raise _usage_limit_reached_error()
         if False:
             yield "unreachable"

@@ -92,6 +92,7 @@ class RequestLogsFlushScheduler:
                 "status": entry.status,
                 "error_code": entry.error_code,
                 "error_message": entry.error_message,
+                "prompt_cache_key_hash": entry.prompt_cache_key_hash,
             }
             for entry in batch
         ]

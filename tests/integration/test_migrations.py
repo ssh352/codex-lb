@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import inspect
+from sqlalchemy.orm import Session
 
 from app.core.auth import DEFAULT_PLAN
 from app.core.crypto import TokenEncryptor
@@ -41,6 +43,16 @@ async def test_run_migrations_preserves_unknown_plan_types(db_setup):
     async with AccountsSessionLocal() as session:
         applied_accounts = await run_migrations(session, role="accounts")
     assert applied_main + applied_accounts == len(MIGRATIONS)
+
+    async with SessionLocal() as session:
+
+        def _has_prompt_cache_key_hash(sync_session: Session) -> bool:
+            conn = sync_session.connection()
+            inspector = inspect(conn)
+            columns = {column["name"] for column in inspector.get_columns("request_logs")}
+            return "prompt_cache_key_hash" in columns
+
+        assert await session.run_sync(_has_prompt_cache_key_hash) is True
 
     async with AccountsSessionLocal() as session:
         acc_one = await session.get(Account, "acc_one")

@@ -18,7 +18,7 @@ from app.core.clients.proxy import ProxyResponseError, filter_inbound_headers
 from app.core.clients.proxy import compact_responses as core_compact_responses
 from app.core.clients.proxy import stream_responses as core_stream_responses
 from app.core.config.settings import get_settings
-from app.core.crypto import TokenEncryptor
+from app.core.crypto import TokenEncryptor, get_or_create_key
 from app.core.errors import openai_error, response_failed_event
 from app.core.metrics import get_metrics
 from app.core.metrics.metrics import ProxyRequestObservation
@@ -28,6 +28,7 @@ from app.core.openai.requests import ResponsesCompactRequest, ResponsesRequest
 from app.core.request_logs.buffer import RequestLogCreate, enqueue_request_log
 from app.core.types import JsonValue
 from app.core.usage.types import UsageWindowRow
+from app.core.utils.fingerprints import hmac_sha256_fingerprint
 from app.core.utils.request_id import ensure_request_id, get_request_id
 from app.core.utils.sse import format_sse_event
 from app.core.utils.time import utcnow
@@ -54,6 +55,15 @@ from app.modules.proxy.repo_bundle import ProxyRepoFactory, ProxyRepositories
 from app.modules.proxy.types import RateLimitStatusPayloadData
 
 logger = logging.getLogger(__name__)
+
+
+def _maybe_prompt_cache_key_hash(value: str | None) -> str | None:
+    if not value:
+        return None
+    if not get_settings().request_logs_prompt_cache_key_hash_enabled:
+        return None
+    key = get_or_create_key()
+    return hmac_sha256_fingerprint(value, key=key)
 
 
 class ProxyService:
@@ -93,6 +103,7 @@ class ProxyService:
         filtered = filter_inbound_headers(headers)
         request_id = ensure_request_id()
         sticky_key = _sticky_key_from_compact_payload(payload)
+        prompt_cache_key_hash = _maybe_prompt_cache_key_hash(sticky_key)
         retryable_codes = {
             "rate_limit_exceeded",
             "usage_limit_reached",
@@ -132,6 +143,7 @@ class ProxyService:
                             status=status,
                             error_code=error_code,
                             error_message=error_message,
+                            prompt_cache_key_hash=prompt_cache_key_hash,
                             requested_at=utcnow(),
                         )
                     )
@@ -151,6 +163,7 @@ class ProxyService:
                         status=status,
                         error_code=error_code,
                         error_message=error_message,
+                        prompt_cache_key_hash=prompt_cache_key_hash,
                         requested_at=utcnow(),
                     )
 
@@ -527,6 +540,7 @@ class ProxyService:
             )
             yield format_sse_event(event)
             return
+        prompt_cache_key_hash = _maybe_prompt_cache_key_hash(sticky_key)
         retryable_codes = {
             "rate_limit_exceeded",
             "usage_limit_reached",
@@ -563,6 +577,7 @@ class ProxyService:
                     headers,
                     request_id,
                     attempt < max_attempts - 1,
+                    prompt_cache_key_hash=prompt_cache_key_hash,
                     api=api,
                 ):
                     emitted_any = True
@@ -584,7 +599,15 @@ class ProxyService:
                         if refresh_exc.is_permanent:
                             await self._load_balancer.mark_permanent_failure(account, refresh_exc.code)
                         continue
-                    async for line in self._stream_once(account, payload, headers, request_id, False, api=api):
+                    async for line in self._stream_once(
+                        account,
+                        payload,
+                        headers,
+                        request_id,
+                        False,
+                        prompt_cache_key_hash=prompt_cache_key_hash,
+                        api=api,
+                    ):
                         yield line
                     return
                 error = _parse_openai_error(exc.payload)
@@ -654,6 +677,7 @@ class ProxyService:
         request_id: str,
         allow_retry: bool,
         *,
+        prompt_cache_key_hash: str | None,
         api: str,
     ) -> AsyncIterator[str]:
         account_id_value = account.id
@@ -775,6 +799,7 @@ class ProxyService:
                                 status=status,
                                 error_code=error_code,
                                 error_message=error_message,
+                                prompt_cache_key_hash=prompt_cache_key_hash,
                                 requested_at=utcnow(),
                             )
                         )
@@ -793,6 +818,7 @@ class ProxyService:
                                 status=status,
                                 error_code=error_code,
                                 error_message=error_message,
+                                prompt_cache_key_hash=prompt_cache_key_hash,
                             )
                 except Exception:
                     logger.warning(

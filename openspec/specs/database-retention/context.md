@@ -11,6 +11,8 @@ append-heavy tables.
 - `usage_history`: typically 1 row per account per usage refresh interval (default 60s), plus
   occasional additional writes (e.g. on-demand refresh flows).
 
+`request_logs` may also include optional debugging metadata (e.g. a hashed stickiness key fingerprint) when enabled.
+
 ### Current deletion behavior
 
 Data is removed only via cascade delete when an account is explicitly deleted (which cascades to

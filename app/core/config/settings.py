@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     request_logs_buffer_maxsize: int = Field(default=5000, gt=0)
     request_logs_flush_interval_seconds: float = Field(default=0.5, gt=0)
     request_logs_flush_max_batch: int = Field(default=200, gt=0)
+    # When enabled, persist an HMAC fingerprint of `prompt_cache_key` to request_logs for postmortem debugging.
+    # This stores only a short hash prefix (not the raw key).
+    request_logs_prompt_cache_key_hash_enabled: bool = False
     # Stickiness storage:
     # - "memory": fastest, avoids DB writes on the proxy hot path, but is per-process and resets on restart.
     # - "db": persists across restarts and works across multiple processes/workers, but adds DB write pressure.
