@@ -49,7 +49,7 @@ from app.modules.proxy.helpers import (
     _upstream_error_from_openai,
     _window_snapshot,
 )
-from app.modules.proxy.load_balancer import LoadBalancer
+from app.modules.proxy.load_balancer import LoadBalancer, LoadBalancerDebugDump, LoadBalancerSelectionEvent
 from app.modules.proxy.rate_limit_cache import get_or_build_rate_limit_headers
 from app.modules.proxy.repo_bundle import ProxyRepoFactory, ProxyRepositories
 from app.modules.proxy.types import RateLimitStatusPayloadData
@@ -74,6 +74,14 @@ class ProxyService:
 
     def invalidate_routing_snapshot(self) -> None:
         self._load_balancer.invalidate_snapshot()
+
+    async def debug_lb_dump(self) -> LoadBalancerDebugDump:
+        return await self._load_balancer.debug_dump()
+
+    def debug_lb_events(self, *, limit: int) -> list[LoadBalancerSelectionEvent]:
+        max_size = get_settings().debug_lb_event_buffer_size
+        capped = max(1, min(int(limit), int(max_size)))
+        return self._load_balancer.debug_events(limit=capped)
 
     def stream_responses(
         self,

@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
 from app.core.clients.http import close_http_client, init_http_client
+from app.core.config.settings import get_settings
 from app.core.config.startup_log import log_startup_config
 from app.core.handlers import add_exception_handlers
 from app.core.middleware import (
@@ -109,6 +110,10 @@ def create_app() -> FastAPI:
     app.include_router(settings_api.router)
     app.include_router(health_api.router)
     app.include_router(metrics_api.router)
+    if get_settings().debug_endpoints_enabled:
+        from app.modules.debug import api as debug_api
+
+        app.include_router(debug_api.router)
 
     static_dir = Path(__file__).parent / "static"
     index_html = static_dir / "index.html"

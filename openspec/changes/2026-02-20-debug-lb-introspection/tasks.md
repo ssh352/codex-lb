@@ -1,0 +1,22 @@
+# Tasks
+
+- [ ] Add settings:
+  - [ ] `CODEX_LB_DEBUG_ENDPOINTS_ENABLED`
+  - [ ] `CODEX_LB_DEBUG_LB_EVENT_BUFFER_SIZE`
+- [ ] Add always-on targeted logs (low noise):
+  - [ ] pinned attempt failed → full fallback summary log
+  - [ ] eligibility-changing mark logs (`mark_rate_limit`, `mark_usage_limit_reached`)
+- [ ] Add module `app/modules/debug/`:
+  - [ ] `schemas.py` (strict typed responses)
+  - [ ] `api.py` (`/debug/lb/state`, `/debug/lb/events`)
+- [ ] Wire router in `app/main.py` (conditional include when enabled; endpoints not in schema).
+- [ ] Extend `LoadBalancer`:
+  - [ ] bounded in-memory ring buffer for selection events
+  - [ ] event emission for pinned attempt + full fallback attempt
+  - [ ] `debug_dump()` for current snapshot + pinned pool + sticky summary
+- [ ] Add pure “eligibility reason” helper that does not mutate state.
+- [ ] Tests:
+  - [ ] debug endpoints disabled → 404
+  - [ ] debug endpoints enabled → 200 + correct response shapes
+  - [ ] `/debug/lb/events` respects `limit` and buffer size bounds
+  - [ ] fallback log and mark logs are emitted (caplog)

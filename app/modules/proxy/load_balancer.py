@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Iterable
 
 from app.core import usage as usage_core
@@ -16,14 +18,19 @@ from app.core.balancer import (
     handle_usage_limit_reached,
     select_account,
 )
+from app.core.balancer.debug import ineligibility_reason
 from app.core.balancer.types import UpstreamError
 from app.core.config.settings import get_settings
 from app.core.metrics import get_metrics
 from app.core.usage.quota import apply_usage_quota
+from app.core.utils.request_id import get_request_id
 from app.db.models import Account, AccountStatus, UsageHistory
 from app.modules.accounts.repository import AccountsRepository, AccountStatusUpdate
 from app.modules.proxy.repo_bundle import ProxyRepoFactory
 from app.modules.proxy.sticky_repository import StickySessionsRepository
+
+logger = logging.getLogger(__name__)
+UTC = timezone.utc
 
 
 @dataclass
@@ -39,6 +46,49 @@ class RuntimeState:
 class AccountSelection:
     account: Account | None
     error_message: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class LoadBalancerSelectionEvent:
+    ts_epoch: float
+    request_id: str | None
+    pool: str
+    sticky_backend: str
+    reallocate_sticky: bool
+    outcome: str
+    reason_code: str | None
+    selected_account_id: str | None
+    error_message: str | None
+    fallback_from_pinned: bool
+
+
+@dataclass(frozen=True, slots=True)
+class LoadBalancerDebugAccountRow:
+    account_id: str
+    email: str
+    plan_type: str
+    status: str
+    deactivation_reason: str | None
+    db_reset_at: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class LoadBalancerDebugDump:
+    snapshot_updated_at_seconds: float
+    sticky_backend: str
+    pinned_account_ids: tuple[str, ...]
+    account_rows: list[LoadBalancerDebugAccountRow]
+    accounts_by_id: dict[str, LoadBalancerDebugAccountRow]
+    latest_primary: dict[str, _UsageSnapshot]
+    latest_secondary: dict[str, _UsageSnapshot]
+    selection_reset_at: dict[str, float | None]
+    cooldown_until: dict[str, float | None]
+    last_error_at: dict[str, float | None]
+    last_selected_at: dict[str, float | None]
+    error_count: dict[str, int]
+    pinned_ineligibility: dict[str, str | None]
+    full_ineligibility: dict[str, str | None]
+    sticky_counts: dict[str, int]
 
 
 @dataclass(slots=True)
@@ -63,9 +113,102 @@ class LoadBalancer:
         self._pinned_settings_cached_ids: tuple[str, ...] | None = None
         self._sticky_lock = asyncio.Lock()
         self._sticky_memory: OrderedDict[str, _StickyEntry] = OrderedDict()
+        self._debug_events: deque[LoadBalancerSelectionEvent] = deque(maxlen=get_settings().debug_lb_event_buffer_size)
+        self._last_pinned_fallback_log_at: float = 0.0
 
     def invalidate_snapshot(self) -> None:
         self._snapshot = None
+
+    def debug_events(self, *, limit: int) -> list[LoadBalancerSelectionEvent]:
+        capped = max(0, min(int(limit), len(self._debug_events)))
+        if capped <= 0:
+            return []
+        items = list(self._debug_events)
+        return list(reversed(items[-capped:]))
+
+    async def debug_dump(self) -> LoadBalancerDebugDump:
+        await self._maybe_invalidate_snapshot_on_pinned_change()
+        snapshot = await self._get_snapshot()
+        settings = get_settings()
+
+        sticky_backend_setting = settings.sticky_sessions_backend
+        sticky_backend = sticky_backend_setting if sticky_backend_setting in {"db", "memory"} else "none"
+
+        account_rows: list[LoadBalancerDebugAccountRow] = []
+        accounts_by_id: dict[str, LoadBalancerDebugAccountRow] = {}
+        for account in snapshot.accounts:
+            row = LoadBalancerDebugAccountRow(
+                account_id=account.id,
+                email=account.email,
+                plan_type=account.plan_type,
+                status=str(account.status.value if hasattr(account.status, "value") else account.status),
+                deactivation_reason=account.deactivation_reason,
+                db_reset_at=account.reset_at,
+            )
+            account_rows.append(row)
+            accounts_by_id[account.id] = row
+
+        now = time.time()
+        pinned_active = bool(snapshot.pinned_account_ids)
+        pinned_cached = self._pinned_settings_cached_ids or tuple()
+        if pinned_cached:
+            pinned_ids = tuple(account_id for account_id in pinned_cached if account_id in snapshot.account_map)
+        else:
+            pinned_ids = tuple(sorted(snapshot.pinned_account_ids))
+
+        full_ineligibility: dict[str, str | None] = {}
+        pinned_ineligibility: dict[str, str | None] = {}
+        selection_reset_at: dict[str, float | None] = {}
+        cooldown_until: dict[str, float | None] = {}
+        last_error_at: dict[str, float | None] = {}
+        last_selected_at: dict[str, float | None] = {}
+        error_count: dict[str, int] = {}
+
+        for state in snapshot.states:
+            reason = ineligibility_reason(state, now=now)
+            full_ineligibility[state.account_id] = reason
+            selection_reset_at[state.account_id] = state.reset_at
+            cooldown_until[state.account_id] = state.cooldown_until
+            last_error_at[state.account_id] = state.last_error_at
+            last_selected_at[state.account_id] = state.last_selected_at
+            error_count[state.account_id] = int(state.error_count)
+
+        if pinned_active:
+            pinned_set = set(snapshot.pinned_account_ids)
+            for state in snapshot.states:
+                if state.account_id not in pinned_set:
+                    pinned_ineligibility[state.account_id] = "not_pinned"
+                else:
+                    pinned_ineligibility[state.account_id] = ineligibility_reason(state, now=now)
+        else:
+            pinned_ineligibility = dict(full_ineligibility)
+
+        sticky_counts: dict[str, int] = {}
+        if sticky_backend == "memory":
+            now = time.time()
+            async with self._sticky_lock:
+                for entry in self._sticky_memory.values():
+                    if entry.expires_at <= now:
+                        continue
+                    sticky_counts[entry.account_id] = sticky_counts.get(entry.account_id, 0) + 1
+
+        return LoadBalancerDebugDump(
+            snapshot_updated_at_seconds=snapshot.updated_at,
+            sticky_backend=sticky_backend,
+            pinned_account_ids=pinned_ids,
+            account_rows=account_rows,
+            accounts_by_id=accounts_by_id,
+            latest_primary=snapshot.latest_primary,
+            latest_secondary=snapshot.latest_secondary,
+            selection_reset_at=selection_reset_at,
+            cooldown_until=cooldown_until,
+            last_error_at=last_error_at,
+            last_selected_at=last_selected_at,
+            error_count=error_count,
+            pinned_ineligibility=pinned_ineligibility,
+            full_ineligibility=full_ineligibility,
+            sticky_counts=sticky_counts,
+        )
 
     async def select_account(
         self,
@@ -117,7 +260,22 @@ class LoadBalancer:
                     reallocate_sticky=reallocate_sticky,
                     outcome=_selection_outcome(result),
                 )
+                self._debug_events.append(
+                    LoadBalancerSelectionEvent(
+                        ts_epoch=time.time(),
+                        request_id=get_request_id(),
+                        pool="pinned" if pinned_active else "full",
+                        sticky_backend=sticky_backend,
+                        reallocate_sticky=reallocate_sticky,
+                        outcome=_selection_outcome(result),
+                        reason_code=result.reason_code,
+                        selected_account_id=result.account.account_id if result.account is not None else None,
+                        error_message=result.error_message,
+                        fallback_from_pinned=False,
+                    )
+                )
                 if pinned_active and result.account is None:
+                    pinned_result = result
                     result = await self._select_with_stickiness(
                         states=snapshot.states,
                         account_map=snapshot.account_map,
@@ -130,6 +288,28 @@ class LoadBalancer:
                         sticky_backend=sticky_backend,
                         reallocate_sticky=reallocate_sticky,
                         outcome=_selection_outcome(result),
+                    )
+                    self._debug_events.append(
+                        LoadBalancerSelectionEvent(
+                            ts_epoch=time.time(),
+                            request_id=get_request_id(),
+                            pool="full",
+                            sticky_backend=sticky_backend,
+                            reallocate_sticky=reallocate_sticky,
+                            outcome=_selection_outcome(result),
+                            reason_code=result.reason_code,
+                            selected_account_id=result.account.account_id if result.account is not None else None,
+                            error_message=result.error_message,
+                            fallback_from_pinned=True,
+                        )
+                    )
+                    self._maybe_log_pinned_fallback(
+                        pinned_states=pinned_states,
+                        account_map=snapshot.account_map,
+                        pinned_result=pinned_result,
+                        full_result=result,
+                        sticky_backend=sticky_backend,
+                        reallocate_sticky=reallocate_sticky,
                     )
         elif sticky_key and sticky_backend == "memory":
             result = await self._select_with_memory_stickiness(
@@ -144,7 +324,22 @@ class LoadBalancer:
                 reallocate_sticky=reallocate_sticky,
                 outcome=_selection_outcome(result),
             )
+            self._debug_events.append(
+                LoadBalancerSelectionEvent(
+                    ts_epoch=time.time(),
+                    request_id=get_request_id(),
+                    pool="pinned" if pinned_active else "full",
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                    outcome=_selection_outcome(result),
+                    reason_code=result.reason_code,
+                    selected_account_id=result.account.account_id if result.account is not None else None,
+                    error_message=result.error_message,
+                    fallback_from_pinned=False,
+                )
+            )
             if pinned_active and result.account is None:
+                pinned_result = result
                 result = await self._select_with_memory_stickiness(
                     states=snapshot.states,
                     account_map=snapshot.account_map,
@@ -157,6 +352,28 @@ class LoadBalancer:
                     reallocate_sticky=reallocate_sticky,
                     outcome=_selection_outcome(result),
                 )
+                self._debug_events.append(
+                    LoadBalancerSelectionEvent(
+                        ts_epoch=time.time(),
+                        request_id=get_request_id(),
+                        pool="full",
+                        sticky_backend=sticky_backend,
+                        reallocate_sticky=reallocate_sticky,
+                        outcome=_selection_outcome(result),
+                        reason_code=result.reason_code,
+                        selected_account_id=result.account.account_id if result.account is not None else None,
+                        error_message=result.error_message,
+                        fallback_from_pinned=True,
+                    )
+                )
+                self._maybe_log_pinned_fallback(
+                    pinned_states=pinned_states,
+                    account_map=snapshot.account_map,
+                    pinned_result=pinned_result,
+                    full_result=result,
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                )
         else:
             result = select_account(pinned_states)
             get_metrics().observe_lb_select(
@@ -165,13 +382,51 @@ class LoadBalancer:
                 reallocate_sticky=reallocate_sticky,
                 outcome=_selection_outcome(result),
             )
+            self._debug_events.append(
+                LoadBalancerSelectionEvent(
+                    ts_epoch=time.time(),
+                    request_id=get_request_id(),
+                    pool="pinned" if pinned_active else "full",
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                    outcome=_selection_outcome(result),
+                    reason_code=result.reason_code,
+                    selected_account_id=result.account.account_id if result.account is not None else None,
+                    error_message=result.error_message,
+                    fallback_from_pinned=False,
+                )
+            )
             if pinned_active and result.account is None:
+                pinned_result = result
                 result = select_account(snapshot.states)
                 get_metrics().observe_lb_select(
                     pool="full",
                     sticky_backend=sticky_backend,
                     reallocate_sticky=reallocate_sticky,
                     outcome=_selection_outcome(result),
+                )
+                self._debug_events.append(
+                    LoadBalancerSelectionEvent(
+                        ts_epoch=time.time(),
+                        request_id=get_request_id(),
+                        pool="full",
+                        sticky_backend=sticky_backend,
+                        reallocate_sticky=reallocate_sticky,
+                        outcome=_selection_outcome(result),
+                        reason_code=result.reason_code,
+                        selected_account_id=result.account.account_id if result.account is not None else None,
+                        error_message=result.error_message,
+                        fallback_from_pinned=True,
+                    )
+                )
+
+                self._maybe_log_pinned_fallback(
+                    pinned_states=pinned_states,
+                    account_map=snapshot.account_map,
+                    pinned_result=pinned_result,
+                    full_result=result,
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
                 )
 
         if result.account is None:
@@ -191,6 +446,53 @@ class LoadBalancer:
         runtime = self._runtime.setdefault(selected_snapshot.id, RuntimeState())
         runtime.last_selected_at = time.time()
         return AccountSelection(account=selected_snapshot, error_message=None)
+
+    def _maybe_log_pinned_fallback(
+        self,
+        *,
+        pinned_states: list[AccountState],
+        account_map: dict[str, Account],
+        pinned_result: SelectionResult | None,
+        full_result: SelectionResult,
+        sticky_backend: str,
+        reallocate_sticky: bool,
+    ) -> None:
+        now = time.time()
+        # Avoid writing a log line per request when pinned pool remains unavailable.
+        if now - self._last_pinned_fallback_log_at < 10.0:
+            return
+        self._last_pinned_fallback_log_at = now
+
+        reason_counts: dict[str, int] = {}
+        for state in pinned_states:
+            reason = ineligibility_reason(state, now=now) or "eligible"
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+        pinned_outcome = _selection_outcome(pinned_result) if pinned_result is not None else "unknown"
+        pinned_reason_code = pinned_result.reason_code if pinned_result is not None else None
+        pinned_error_message = pinned_result.error_message if pinned_result is not None else None
+
+        selected_display: str | None = None
+        if full_result.account is not None:
+            selected = account_map.get(full_result.account.account_id)
+            if selected is not None:
+                selected_display = f"{selected.email}[{selected.id[:3]}]"
+
+        logger.info(
+            "lb_fallback pinned_failed pinned_size=%s pinned_outcome=%s pinned_reason_code=%s "
+            "pinned_error=%s reasons=%s full_outcome=%s full_selected=%s sticky_backend=%s "
+            "reallocate=%s request_id=%s",
+            len(pinned_states),
+            pinned_outcome,
+            pinned_reason_code,
+            pinned_error_message,
+            ",".join(f"{k}={v}" for k, v in sorted(reason_counts.items())),
+            _selection_outcome(full_result),
+            selected_display,
+            sticky_backend,
+            reallocate_sticky,
+            get_request_id(),
+        )
 
     async def _maybe_invalidate_snapshot_on_pinned_change(self) -> None:
         snapshot = self._snapshot
@@ -346,6 +648,15 @@ class LoadBalancer:
     async def mark_rate_limit(self, account: Account, error: UpstreamError) -> None:
         state = self._state_for(account)
         handle_rate_limit(state, error)
+        logger.info(
+            "lb_mark event=rate_limit account=%s[%s] error_count=%s cooldown_until=%s reset_at=%s request_id=%s",
+            account.email,
+            account.id[:3],
+            state.error_count,
+            _dt_iso(_dt_from_epoch(state.cooldown_until)),
+            _dt_iso(_dt_from_epoch(state.reset_at)),
+            get_request_id(),
+        )
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
         get_metrics().observe_lb_mark(event="rate_limit", account_id=account.id)
@@ -354,6 +665,14 @@ class LoadBalancer:
     async def mark_usage_limit_reached(self, account: Account, error: UpstreamError) -> None:
         state = self._state_for(account)
         handle_usage_limit_reached(state, error)
+        logger.info(
+            "lb_mark event=usage_limit_reached account=%s[%s] error_count=%s cooldown_until=%s request_id=%s",
+            account.email,
+            account.id[:3],
+            state.error_count,
+            _dt_iso(_dt_from_epoch(state.cooldown_until)),
+            get_request_id(),
+        )
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
         # Keep metrics compatibility: `usage_limit_reached` is treated as a rate-limit-like mark.
@@ -555,6 +874,7 @@ def _clone_account(account: Account) -> Account:
 
 @dataclass(frozen=True, slots=True)
 class _UsageSnapshot:
+    recorded_at: datetime | None
     used_percent: float
     reset_at: int | None
     window_minutes: int | None
@@ -569,12 +889,23 @@ class _StickyEntry:
 def _usage_snapshots(entries: dict[str, UsageHistory]) -> dict[str, _UsageSnapshot]:
     return {
         account_id: _UsageSnapshot(
+            recorded_at=entry.recorded_at,
             used_percent=entry.used_percent,
             reset_at=entry.reset_at,
             window_minutes=entry.window_minutes,
         )
         for account_id, entry in entries.items()
     }
+
+
+def _dt_from_epoch(value: float | int | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromtimestamp(float(value), tz=UTC)
+
+
+def _dt_iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
 
 
 def _selection_outcome(result: SelectionResult) -> str:

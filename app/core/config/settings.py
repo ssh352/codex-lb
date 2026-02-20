@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     log_proxy_request_shape: bool = False
     log_proxy_request_shape_raw_cache_key: bool = False
     log_proxy_request_payload: bool = False
+    debug_endpoints_enabled: bool = False
+    debug_lb_event_buffer_size: int = Field(default=1000, gt=0)
     # Uvicorn per-request access logs (uvicorn.access).
     #
     # Disabled by default to reduce stdout/stderr I/O overhead and log noise on the proxy hot path.
