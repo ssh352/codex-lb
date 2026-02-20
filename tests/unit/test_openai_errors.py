@@ -8,7 +8,7 @@ def test_response_failed_event_includes_incomplete_details():
 
     response = event["response"]
     assert "incomplete_details" in response
-    assert response["incomplete_details"] is None
+    assert response.get("incomplete_details") is None
 
 
 def test_response_failed_event_accepts_incomplete_details():
@@ -20,4 +20,4 @@ def test_response_failed_event_accepts_incomplete_details():
     )
 
     response = event["response"]
-    assert response["incomplete_details"] == {"reason": "max_output_tokens"}
+    assert response.get("incomplete_details") == {"reason": "max_output_tokens"}

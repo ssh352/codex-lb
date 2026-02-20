@@ -1003,6 +1003,7 @@ def _is_text_content_part(payload: dict[str, JsonValue] | None) -> bool:
     part_type = part.get("type")
     return isinstance(part_type, str) and part_type in _TEXT_DONE_CONTENT_PART_TYPES
 
+
 def _maybe_log_proxy_request_shape(
     kind: str,
     payload: ResponsesRequest | ResponsesCompactRequest,

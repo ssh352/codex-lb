@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
