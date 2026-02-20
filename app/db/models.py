@@ -67,6 +67,16 @@ class RequestLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(String, nullable=False)
     request_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Raw Codex client identifiers (from request headers) used to correlate many requests that are
+    # part of the same Codex CLI session/conversation.
+    #
+    # Stored raw (not hashed) to keep local, personal deployments simple to query/debug
+    # ("WHERE codex_session_id = ?") without requiring a hashing step.
+    #
+    # If this DB may be shared or shipped to others, prefer storing only an HMAC hash (and avoid
+    # logging raw values).
+    codex_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    codex_conversation_id: Mapped[str | None] = mapped_column(String, nullable=True)
     requested_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)

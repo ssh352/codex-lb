@@ -14,6 +14,7 @@ from app.db.migrations.versions import (
     add_dashboard_settings,
     add_dashboard_settings_pins,
     add_dashboard_settings_totp,
+    add_request_logs_codex_session_ids,
     add_request_logs_prompt_cache_key_hash,
     add_request_logs_reasoning_effort,
     add_usage_history_window_index,
@@ -54,6 +55,7 @@ MIGRATIONS: Final[tuple[Migration, ...]] = (
     Migration("008_remove_main_db_account_foreign_keys", "main", remove_main_db_account_foreign_keys.run),
     Migration("009_add_dashboard_settings_pins", "main", add_dashboard_settings_pins.run),
     Migration("010_add_request_logs_prompt_cache_key_hash", "main", add_request_logs_prompt_cache_key_hash.run),
+    Migration("011_add_request_logs_codex_session_ids", "main", add_request_logs_codex_session_ids.run),
 )
 
 

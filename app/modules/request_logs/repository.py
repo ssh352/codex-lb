@@ -36,11 +36,15 @@ class RequestLogsRepository:
         reasoning_tokens: int | None = None,
         reasoning_effort: str | None = None,
         prompt_cache_key_hash: str | None = None,
+        codex_session_id: str | None = None,
+        codex_conversation_id: str | None = None,
     ) -> RequestLog:
         resolved_request_id = ensure_request_id(request_id)
         log = RequestLog(
             account_id=account_id,
             request_id=resolved_request_id,
+            codex_session_id=codex_session_id,
+            codex_conversation_id=codex_conversation_id,
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -130,6 +134,8 @@ class RequestLogsRepository:
             search_conditions = [
                 RequestLog.account_id.ilike(search_pattern),
                 RequestLog.request_id.ilike(search_pattern),
+                RequestLog.codex_session_id.ilike(search_pattern),
+                RequestLog.codex_conversation_id.ilike(search_pattern),
                 RequestLog.model.ilike(search_pattern),
                 RequestLog.reasoning_effort.ilike(search_pattern),
                 RequestLog.status.ilike(search_pattern),

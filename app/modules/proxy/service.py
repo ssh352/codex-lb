@@ -109,6 +109,8 @@ class ProxyService:
         _maybe_log_proxy_request_payload("compact", payload, headers)
         _maybe_log_proxy_request_shape("compact", payload, headers)
         filtered = filter_inbound_headers(headers)
+        codex_session_id = self._optional_header_value(filtered, "x-codex-session-id")
+        codex_conversation_id = self._optional_header_value(filtered, "x-codex-conversation-id")
         request_id = ensure_request_id()
         sticky_key = _sticky_key_from_compact_payload(payload)
         prompt_cache_key_hash = _maybe_prompt_cache_key_hash(sticky_key)
@@ -154,6 +156,8 @@ class ProxyService:
                             error_code=error_code,
                             error_message=error_message,
                             prompt_cache_key_hash=prompt_cache_key_hash,
+                            codex_session_id=codex_session_id,
+                            codex_conversation_id=codex_conversation_id,
                             requested_at=utcnow(),
                         )
                     )
@@ -174,6 +178,8 @@ class ProxyService:
                         error_code=error_code,
                         error_message=error_message,
                         prompt_cache_key_hash=prompt_cache_key_hash,
+                        codex_session_id=codex_session_id,
+                        codex_conversation_id=codex_conversation_id,
                         requested_at=utcnow(),
                     )
 
@@ -696,6 +702,8 @@ class ProxyService:
         account_id_value = account.id
         access_token = self._encryptor.decrypt(account.access_token_encrypted)
         account_id = _header_account_id(account.chatgpt_account_id)
+        codex_session_id = self._optional_header_value(headers, "x-codex-session-id")
+        codex_conversation_id = self._optional_header_value(headers, "x-codex-conversation-id")
         model = payload.model
         reasoning_effort = payload.reasoning.effort if payload.reasoning else None
         start = time.monotonic()
@@ -813,6 +821,8 @@ class ProxyService:
                                 error_code=error_code,
                                 error_message=error_message,
                                 prompt_cache_key_hash=prompt_cache_key_hash,
+                                codex_session_id=codex_session_id,
+                                codex_conversation_id=codex_conversation_id,
                                 requested_at=utcnow(),
                             )
                         )
@@ -832,6 +842,8 @@ class ProxyService:
                                 error_code=error_code,
                                 error_message=error_message,
                                 prompt_cache_key_hash=prompt_cache_key_hash,
+                                codex_session_id=codex_session_id,
+                                codex_conversation_id=codex_conversation_id,
                             )
                 except Exception:
                     logger.warning(
@@ -840,6 +852,19 @@ class ProxyService:
                         request_id,
                         exc_info=True,
                     )
+
+    @staticmethod
+    def _optional_header_value(headers: Mapping[str, str], name: str) -> str | None:
+        # Headers are case-insensitive; normalize by scanning the inbound mapping.
+        #
+        # We intentionally store Codex session identifiers *raw* in the local DB to keep personal
+        # debugging simple ("WHERE codex_session_id = ?") without requiring a hashing step.
+        target = name.lower()
+        for key, value in headers.items():
+            if key.lower() == target:
+                stripped = value.strip()
+                return stripped or None
+        return None
 
     async def _latest_usage_rows(
         self,

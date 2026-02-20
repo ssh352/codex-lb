@@ -76,3 +76,44 @@ async def test_request_logs_api_returns_recent(async_client, db_setup):
     assert older["status"] == "ok"
     assert older["tokens"] == 300
     assert older["cachedInputTokens"] is None
+
+
+@pytest.mark.asyncio
+async def test_request_logs_search_matches_codex_session_id(async_client, db_setup):
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(_make_account("acc_logs_session", "logs-session@example.com"))
+
+    async with SessionLocal() as session:
+        logs_repo = RequestLogsRepository(session)
+        now = utcnow()
+        await logs_repo.add_log(
+            account_id="acc_logs_session",
+            request_id="req_logs_session_1",
+            model="gpt-5.1",
+            input_tokens=10,
+            output_tokens=20,
+            latency_ms=100,
+            status="success",
+            error_code=None,
+            codex_session_id="codex_sess_123",
+            codex_conversation_id="codex_conv_abc",
+            requested_at=now,
+        )
+        await logs_repo.add_log(
+            account_id="acc_logs_session",
+            request_id="req_logs_session_2",
+            model="gpt-5.1",
+            input_tokens=10,
+            output_tokens=20,
+            latency_ms=100,
+            status="success",
+            error_code=None,
+            codex_session_id="codex_sess_other",
+            requested_at=now,
+        )
+
+    response = await async_client.get("/api/request-logs?search=codex_sess_123")
+    assert response.status_code == 200
+    payload = response.json()["requests"]
+    assert [entry["requestId"] for entry in payload] == ["req_logs_session_1"]
