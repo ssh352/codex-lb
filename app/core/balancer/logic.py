@@ -164,6 +164,29 @@ def handle_rate_limit(state: AccountState, error: UpstreamError) -> None:
     if delay is None:
         delay = backoff_seconds(state.error_count)
     state.cooldown_until = time.time() + delay
+    # Fail-safe: if upstream did not provide a reset time, ensure we can recover automatically.
+    # `select_account()` only auto-clears RATE_LIMITED when `reset_at` is set and in the past.
+    if state.reset_at is None:
+        state.reset_at = float(state.cooldown_until)
+
+
+def handle_usage_limit_reached(state: AccountState, error: UpstreamError) -> None:
+    # Unlike `rate_limit_exceeded`, upstream `usage_limit_reached` can be transient and may not
+    # correlate with the usage meter being fully exhausted. Treat it as a soft cooldown signal:
+    # - do NOT flip the account into a persistent RATE_LIMITED state
+    # - apply a short retry delay (prefer explicit retry hints; otherwise backoff)
+    state.error_count += 1
+    state.last_error_at = time.time()
+
+    message = error.get("message")
+    delay = parse_retry_after(message) if message else None
+    if delay is None:
+        reset_in = error.get("resets_in_seconds")
+        if isinstance(reset_in, (int, float)) and reset_in > 0:
+            delay = float(reset_in)
+    if delay is None:
+        delay = backoff_seconds(state.error_count)
+    state.cooldown_until = time.time() + delay
 
 
 def handle_quota_exceeded(state: AccountState, error: UpstreamError) -> None:

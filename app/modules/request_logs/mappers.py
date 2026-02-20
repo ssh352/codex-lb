@@ -6,6 +6,9 @@ from app.core.usage.logs import RequestLogLike, cached_input_tokens_from_log, co
 from app.db.models import RequestLog
 from app.modules.request_logs.schemas import RequestLogEntry
 
+# `usage_limit_reached` may be emitted transiently upstream even when the usage meter is < 100%.
+# We still classify it as rate-limit-like for logs/UX purposes; routing policy should avoid
+# treating a single occurrence as a multi-day hard lock.
 RATE_LIMIT_CODES = {"rate_limit_exceeded", "usage_limit_reached"}
 QUOTA_CODES = {"insufficient_quota", "usage_not_included", "quota_exceeded"}
 

@@ -175,6 +175,9 @@ async def _stream_responses(
     stream = context.service.stream_responses(
         payload,
         request.headers,
+        # Propagate upstream HTTP errors (e.g. 429 usage/rate limits) as HTTP responses instead of
+        # converting them into SSE "response.failed" events. When all failover attempts are exhausted,
+        # the client (e.g. Codex CLI) will receive the 429 and may prompt the user.
         propagate_http_errors=True,
     )
     try:

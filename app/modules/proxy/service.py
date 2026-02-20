@@ -111,6 +111,8 @@ class ProxyService:
             "usage_not_included",
             "quota_exceeded",
         }
+        # Fail over across multiple accounts, but keep the bound small to avoid long tail latency
+        # when upstream is broadly unavailable/limited across many accounts.
         max_attempts = 3
         last_retryable_error: ProxyResponseError | None = None
 
@@ -549,6 +551,9 @@ class ProxyService:
             "quota_exceeded",
         }
         emitted_any = False
+        # Account failover happens inside this loop. When upstream errors are marked retryable and
+        # we haven't emitted any SSE output yet, we re-select an account (`reallocate_sticky=True`)
+        # and try again. After `max_attempts`, we surface the last upstream HTTP error to the client.
         max_attempts = 3
         last_retryable_error: ProxyResponseError | None = None
         for attempt in range(max_attempts):
@@ -877,8 +882,18 @@ class ProxyService:
         await self._handle_stream_error(account, _upstream_error_from_openai(error), code)
 
     async def _handle_stream_error(self, account: Account, error: UpstreamError, code: str) -> None:
-        if code in {"rate_limit_exceeded", "usage_limit_reached"}:
+        # NOTE: `usage_limit_reached` is not guaranteed to mean "weekly quota is fully exhausted".
+        # In practice it can appear transiently (and even be followed by successful requests) while
+        # `/backend-api/wham/usage` still reports <100% used for the secondary window.
+        #
+        # Operationally, a "fail-open with cooldown/backoff" policy tends to be safer than locking
+        # an account out for days on a single `usage_limit_reached`. If upstream *is* truly hard
+        # limiting, repeated errors and/or a refreshed usage snapshot should confirm it.
+        if code == "rate_limit_exceeded":
             await self._load_balancer.mark_rate_limit(account, error)
+            return
+        if code == "usage_limit_reached":
+            await self._load_balancer.mark_usage_limit_reached(account, error)
             return
         if code in {"insufficient_quota", "usage_not_included", "quota_exceeded"}:
             await self._load_balancer.mark_quota_exceeded(account, error)

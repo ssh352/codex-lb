@@ -13,6 +13,7 @@ from app.core.balancer import (
     handle_permanent_failure,
     handle_quota_exceeded,
     handle_rate_limit,
+    handle_usage_limit_reached,
     select_account,
 )
 from app.core.balancer.types import UpstreamError
@@ -347,6 +348,15 @@ class LoadBalancer:
         handle_rate_limit(state, error)
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
+        get_metrics().observe_lb_mark(event="rate_limit", account_id=account.id)
+        self._snapshot = None
+
+    async def mark_usage_limit_reached(self, account: Account, error: UpstreamError) -> None:
+        state = self._state_for(account)
+        handle_usage_limit_reached(state, error)
+        async with self._repo_factory() as repos:
+            await self._sync_state(repos.accounts, account, state)
+        # Keep metrics compatibility: `usage_limit_reached` is treated as a rate-limit-like mark.
         get_metrics().observe_lb_mark(event="rate_limit", account_id=account.id)
         self._snapshot = None
 

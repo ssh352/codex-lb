@@ -222,4 +222,4 @@ async def test_proxy_stream_usage_limit_returns_http_error(async_client, monkeyp
     async with AccountsSessionLocal() as session:
         acc = await session.get(Account, expected_account_id)
         assert acc is not None
-        assert acc.status == AccountStatus.RATE_LIMITED
+        assert acc.status == AccountStatus.ACTIVE

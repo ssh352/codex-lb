@@ -14,6 +14,7 @@ def _run_node(script: str) -> subprocess.CompletedProcess[str]:
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is required for state_defaults.js unit tests")
+    assert node is not None
     return subprocess.run(
         [node, "-e", script],
         check=False,
