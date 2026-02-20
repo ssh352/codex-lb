@@ -210,3 +210,45 @@ def test_compact_prompt_cache_key_is_not_forwarded_upstream():
     assert request.model_extra and request.model_extra["prompt_cache_key"] == "sticky"
     dumped = request.to_payload()
     assert "prompt_cache_key" not in dumped
+
+
+def test_v1_assistant_tool_calls_decomposed():
+    payload = {
+        "model": "gpt-5.1",
+        "messages": [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "sure",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "fn", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "done"},
+        ],
+    }
+    request = V1ResponsesRequest.model_validate(payload).to_responses_request()
+    items = request.input
+    assert isinstance(items, list)
+    assert items[0] == {"role": "user", "content": [{"type": "input_text", "text": "hi"}]}
+    assert items[1] == {"role": "assistant", "content": [{"type": "output_text", "text": "sure"}]}
+    assert items[2] == {"type": "function_call", "call_id": "call_1", "name": "fn", "arguments": "{}"}
+    assert items[3] == {"type": "function_call_output", "call_id": "call_1", "output": "done"}
+
+
+def test_v1_tool_message_converts():
+    payload = {
+        "model": "gpt-5.1",
+        "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "tool", "tool_call_id": "call_1", "content": "result"},
+        ],
+    }
+    request = V1ResponsesRequest.model_validate(payload).to_responses_request()
+    items = request.input
+    assert isinstance(items, list)
+    assert items[1] == {"type": "function_call_output", "call_id": "call_1", "output": "result"}
