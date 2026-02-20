@@ -29,11 +29,11 @@ class DashboardErrorEnvelope(TypedDict):
 
 class ResponseFailedResponse(TypedDict):
     object: str
-    created_at: int
     status: str
     error: OpenAIErrorDetail
-    incomplete_details: dict[str, str] | None
     id: NotRequired[str]
+    created_at: NotRequired[int]
+    incomplete_details: NotRequired[dict[str, str] | None]
 
 
 class ResponseFailedEvent(TypedDict):

@@ -83,17 +83,26 @@ Add the following to `~/.config/opencode/opencode.json`:
 
 ```jsonc
 {
-  ...
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
-    "openai": {
+    "codex-lb": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "codex-lb",
       "options": {
         "baseURL": "http://127.0.0.1:2455/v1"
+      },
+      "models": {
+        "gpt-5.2-codex": { "name": "GPT-5.2 Codex", "reasoning": true, "interleaved": { "field": "reasoning_details" } }
       }
-    },
-    ...
-  }
+    }
+  },
+  "model": "codex-lb/gpt-5.2-codex"
 }
 ```
+
+This keeps OpenCode's default providers/connections available and adds `codex-lb` as an extra selectable provider.
+
+If you use `enabled_providers`, include every provider you want to keep plus `codex-lb`; otherwise non-listed providers are hidden.
 
 ## Configuration
 

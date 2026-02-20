@@ -88,6 +88,20 @@ class ChatCompletionUsage(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    prompt_tokens_details: "ChatPromptTokensDetails | None" = None
+    completion_tokens_details: "ChatCompletionTokensDetails | None" = None
+
+
+class ChatPromptTokensDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cached_tokens: int | None = None
+
+
+class ChatCompletionTokensDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reasoning_tokens: int | None = None
 
 
 class ChatCompletion(BaseModel):
@@ -265,7 +279,7 @@ def iter_chat_chunks(
                 if isinstance(maybe_error, dict):
                     error = maybe_error
             if error is not None:
-                error_payload: dict[str, JsonValue] = {"error": cast(JsonValue, error)}
+                error_payload: dict[str, JsonValue] = {"error": error}
                 yield _dump_sse(error_payload)
                 yield "data: [DONE]\n\n"
                 return
@@ -412,10 +426,21 @@ def _map_usage(usage: ResponseUsage | None) -> ChatCompletionUsage | None:
     total_tokens = usage.total_tokens
     if prompt_tokens is None and completion_tokens is None and total_tokens is None:
         return None
+    prompt_details = None
+    cached_tokens = usage.input_tokens_details.cached_tokens if usage.input_tokens_details else None
+    if cached_tokens is not None:
+        prompt_details = ChatPromptTokensDetails(cached_tokens=cached_tokens)
+
+    completion_details = None
+    reasoning_tokens = usage.output_tokens_details.reasoning_tokens if usage.output_tokens_details else None
+    if reasoning_tokens is not None:
+        completion_details = ChatCompletionTokensDetails(reasoning_tokens=reasoning_tokens)
     return ChatCompletionUsage(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
+        prompt_tokens_details=prompt_details,
+        completion_tokens_details=completion_details,
     )
 
 

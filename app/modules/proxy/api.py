@@ -133,6 +133,7 @@ async def v1_chat_completions(
         request.headers,
         propagate_http_errors=True,
         api="chat_completions",
+        suppress_text_done_events=True,
     )
     try:
         first = await stream.__anext__()
@@ -172,6 +173,8 @@ async def _stream_responses(
     request: Request,
     payload: ResponsesRequest,
     context: ProxyContext,
+    *,
+    suppress_text_done_events: bool = False,
 ) -> Response:
     rate_limit_headers = await context.service.rate_limit_headers()
     payload.stream = True
@@ -182,6 +185,7 @@ async def _stream_responses(
         # converting them into SSE "response.failed" events. When all failover attempts are exhausted,
         # the client (e.g. Codex CLI) will receive the 429 and may prompt the user.
         propagate_http_errors=True,
+        suppress_text_done_events=suppress_text_done_events,
     )
     try:
         first = await stream.__anext__()
@@ -204,6 +208,8 @@ async def _collect_responses(
     request: Request,
     payload: ResponsesRequest,
     context: ProxyContext,
+    *,
+    suppress_text_done_events: bool = False,
 ) -> Response:
     rate_limit_headers = await context.service.rate_limit_headers()
     payload.stream = True
@@ -211,6 +217,7 @@ async def _collect_responses(
         payload,
         request.headers,
         propagate_http_errors=True,
+        suppress_text_done_events=suppress_text_done_events,
     )
     try:
         response_payload = await _collect_responses_payload(stream)
