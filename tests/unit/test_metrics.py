@@ -182,10 +182,10 @@ def test_metrics_refreshes_secondary_usage_gauges() -> None:
         now_epoch + 3_600
     )
     assert _sample_value(rendered, "codex_lb_secondary_window_minutes", {"account_id": "acc_a"}) == 10080.0
-    assert _sample_value(rendered, "codex_lb_secondary_remaining_credits", {"account_id": "acc_a"}) == 200.0
+    assert _sample_value(rendered, "codex_lb_secondary_remaining_credits", {"account_id": "acc_a"}) == 3780.0
 
     assert _sample_value(rendered, "codex_lb_secondary_used_percent", {"account_id": "acc_b"}) == 0.0
-    assert _sample_value(rendered, "codex_lb_secondary_remaining_credits", {"account_id": "acc_b"}) == 400.0
+    assert _sample_value(rendered, "codex_lb_secondary_remaining_credits", {"account_id": "acc_b"}) == 7560.0
     assert _sample_value(rendered, "codex_lb_accounts_total", {"status": "active"}) == 2.0
     assert "codex_lb_secondary_projected_waste_credits" not in rendered
     assert "codex_lb_secondary_delta_needed_cph" not in rendered

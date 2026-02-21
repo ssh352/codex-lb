@@ -42,7 +42,7 @@ def test_select_account_waste_pressure_prefers_high_capacity_near_reset():
             used_percent=10.0,
             secondary_used_percent=0.0,
             secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=3200.0,
+            secondary_capacity_credits=60480.0,
         ),
     ]
     result = select_account(states, now=now)
@@ -67,7 +67,7 @@ def test_select_account_waste_pressure_penalizes_low_primary_headroom():
             used_percent=99.0,
             secondary_used_percent=0.0,
             secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=3200.0,
+            secondary_capacity_credits=60480.0,
         ),
     ]
     result = select_account(states, now=now)
@@ -162,7 +162,7 @@ def test_select_account_waste_pressure_ignores_unknown_reset_even_if_high_capaci
             used_percent=0.0,
             secondary_used_percent=None,
             secondary_reset_at=None,
-            secondary_capacity_credits=3200.0,
+            secondary_capacity_credits=60480.0,
         ),
         AccountState(
             "known_free",

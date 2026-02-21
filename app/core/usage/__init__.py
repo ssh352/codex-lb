@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from fractions import Fraction
 from typing import Iterable, Mapping
 
 from app.core.plan_types import normalize_account_plan_type
@@ -14,6 +15,17 @@ from app.core.usage.types import (
 )
 from app.db.models import Account
 
+# Capacity credits translate a rate-limit percent (0-100) into an absolute credit amount for
+# dashboards and waste-pacing heuristics. The upstream usage telemetry exposes two windows:
+# - primary: ~5 hours
+# - secondary: ~7 days
+#
+# For paid plans, we keep credits-per-minute consistent by deriving the secondary capacity from
+# the primary capacity scaled by the window duration ratio (7d / 5h = 33.6). Plans without a
+# primary window (e.g. "free") must define an explicit secondary capacity.
+DEFAULT_WINDOW_MINUTES_PRIMARY = 300
+DEFAULT_WINDOW_MINUTES_SECONDARY = 10080
+
 PLAN_CAPACITY_CREDITS_PRIMARY = {
     "plus": 225.0,
     "business": 225.0,
@@ -21,16 +33,27 @@ PLAN_CAPACITY_CREDITS_PRIMARY = {
     "pro": 1800.0,
 }
 
-PLAN_CAPACITY_CREDITS_SECONDARY = {
-    "free": 100.0,
-    "plus": 400.0,
-    "business": 400.0,
-    "team": 400.0,
-    "pro": 3200.0,
+_SECONDARY_TO_PRIMARY_WINDOW_RATIO = Fraction(DEFAULT_WINDOW_MINUTES_SECONDARY, DEFAULT_WINDOW_MINUTES_PRIMARY)
+
+_PLAN_CAPACITY_CREDITS_SECONDARY_OVERRIDES = {
+    # Free accounts don't have a meaningful 5h primary capacity. Keep an explicit 7d capacity.
+    #
+    # Keep the historical paid/free secondary ratio from the previous config:
+    # plus:free = 400:100 = 4:1. With paid plans derived time-proportionally (7d/5h),
+    # this sets free secondary to (plus secondary) / 4.
+    "free": float(Fraction(str(PLAN_CAPACITY_CREDITS_PRIMARY["plus"])) * _SECONDARY_TO_PRIMARY_WINDOW_RATIO / 4),
 }
 
-DEFAULT_WINDOW_MINUTES_PRIMARY = 300
-DEFAULT_WINDOW_MINUTES_SECONDARY = 10080
+
+def _derive_secondary_capacities() -> dict[str, float]:
+    derived: dict[str, float] = {}
+    for plan, primary_credits in PLAN_CAPACITY_CREDITS_PRIMARY.items():
+        derived[plan] = float(Fraction(str(primary_credits)) * _SECONDARY_TO_PRIMARY_WINDOW_RATIO)
+    derived.update(_PLAN_CAPACITY_CREDITS_SECONDARY_OVERRIDES)
+    return derived
+
+
+PLAN_CAPACITY_CREDITS_SECONDARY = _derive_secondary_capacities()
 
 
 def _normalize_window_key(window: str | None) -> str:

@@ -29,14 +29,14 @@ def test_secondary_waste_pacing_on_track_when_current_rate_matches_required_rate
     assert result.summary.accounts_evaluated == 1
     assert result.summary.accounts_at_risk == 0
     assert result.summary.projected_waste_credits_total == pytest.approx(0.0)
-    assert result.summary.current_rate_credits_per_hour_total == pytest.approx(400.0)
-    assert result.summary.required_rate_credits_per_hour_total == pytest.approx(400.0)
+    assert result.summary.current_rate_credits_per_hour_total == pytest.approx(7560.0)
+    assert result.summary.required_rate_credits_per_hour_total == pytest.approx(7560.0)
 
     account = result.accounts[0]
     assert account.on_track is True
     assert account.projected_waste_credits == pytest.approx(0.0)
-    assert account.current_rate_credits_per_hour == pytest.approx(400.0)
-    assert account.required_rate_credits_per_hour == pytest.approx(400.0)
+    assert account.current_rate_credits_per_hour == pytest.approx(7560.0)
+    assert account.required_rate_credits_per_hour == pytest.approx(7560.0)
 
 
 def test_secondary_waste_pacing_current_rate_is_unknown_when_elapsed_is_zero() -> None:
