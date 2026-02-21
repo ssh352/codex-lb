@@ -7,6 +7,7 @@ from app.core.balancer import (
     handle_permanent_failure,
     handle_quota_exceeded,
     handle_rate_limit,
+    handle_usage_limit_reached,
     select_account,
 )
 from app.core.usage.quota import apply_usage_quota
@@ -233,6 +234,49 @@ def test_handle_rate_limit_uses_backoff_when_no_delay(monkeypatch):
     assert state.status == AccountStatus.RATE_LIMITED
     assert state.cooldown_until is not None
     assert state.cooldown_until == pytest.approx(now + 0.2)
+
+
+def test_handle_usage_limit_reached_persists_rate_limit_when_reset_is_far(monkeypatch):
+    now = 1_700_000_000.0
+    reset_at = int(now + 3600)
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
+    handle_usage_limit_reached(
+        state,
+        {
+            "message": "The usage limit has been reached",
+            "resets_at": reset_at,
+            "resets_in_seconds": 3600,
+        },
+    )
+    assert state.status == AccountStatus.RATE_LIMITED
+    assert state.reset_at == pytest.approx(float(reset_at))
+    assert state.cooldown_until is not None
+    assert state.cooldown_until == pytest.approx(now + 3600.0)
+
+
+def test_handle_usage_limit_reached_does_not_persist_without_reset_hints(monkeypatch):
+    now = 1_700_000_000.0
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    monkeypatch.setattr("app.core.balancer.logic.backoff_seconds", lambda _: 0.25)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
+    handle_usage_limit_reached(state, {"message": "The usage limit has been reached"})
+    assert state.status == AccountStatus.ACTIVE
+    assert state.reset_at is None
+    assert state.cooldown_until is not None
+    assert state.cooldown_until == pytest.approx(now + 0.25)
+
+
+def test_handle_usage_limit_reached_keeps_soft_cooldown_for_short_reset(monkeypatch):
+    now = 1_700_000_000.0
+    reset_at = int(now + 30)
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
+    handle_usage_limit_reached(state, {"resets_at": reset_at, "resets_in_seconds": 30})
+    assert state.status == AccountStatus.ACTIVE
+    assert state.reset_at is None
+    assert state.cooldown_until is not None
+    assert state.cooldown_until == pytest.approx(now + 30.0)
 
 
 def test_select_account_skips_cooldown_until_expired():

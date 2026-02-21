@@ -16,6 +16,8 @@ PERMANENT_FAILURE_CODES = {
     "account_deleted": "Account has been deleted",
 }
 
+_USAGE_LIMIT_REACHED_PERSIST_THRESHOLD_SECONDS = 5 * 60.0
+
 
 @dataclass
 class AccountState:
@@ -176,17 +178,32 @@ def handle_usage_limit_reached(state: AccountState, error: UpstreamError) -> Non
     # - do NOT flip the account into a persistent RATE_LIMITED state
     # - apply a short retry delay (prefer explicit retry hints; otherwise backoff)
     state.error_count += 1
-    state.last_error_at = time.time()
+    now = time.time()
+    state.last_error_at = now
 
     message = error.get("message")
     delay = parse_retry_after(message) if message else None
+    reset_at = _extract_reset_at(error)
     if delay is None:
         reset_in = error.get("resets_in_seconds")
         if isinstance(reset_in, (int, float)) and reset_in > 0:
             delay = float(reset_in)
+    if reset_at is not None:
+        delay_to_reset = max(0.0, float(reset_at) - now)
+        delay = max(float(delay or 0.0), delay_to_reset)
     if delay is None:
         delay = backoff_seconds(state.error_count)
-    state.cooldown_until = time.time() + delay
+    state.cooldown_until = now + delay
+
+    # If upstream provides a real reset boundary, treat it as a real rate-limit state so it:
+    # - survives process restarts (persisted via LoadBalancer._sync_state -> accounts.reset_at)
+    # - is visible in the dashboard (account status is no longer misleadingly ACTIVE)
+    #
+    # Guard with a small threshold to avoid "temporary" `usage_limit_reached` blips turning into
+    # persistent multi-hour locks when upstream did not actually provide a meaningful reset.
+    if reset_at is not None and (float(reset_at) - now) >= _USAGE_LIMIT_REACHED_PERSIST_THRESHOLD_SECONDS:
+        state.status = AccountStatus.RATE_LIMITED
+        state.reset_at = float(reset_at)
 
 
 def handle_quota_exceeded(state: AccountState, error: UpstreamError) -> None:
