@@ -173,10 +173,15 @@ def handle_rate_limit(state: AccountState, error: UpstreamError) -> None:
 
 
 def handle_usage_limit_reached(state: AccountState, error: UpstreamError) -> None:
-    # Unlike `rate_limit_exceeded`, upstream `usage_limit_reached` can be transient and may not
-    # correlate with the usage meter being fully exhausted. Treat it as a soft cooldown signal:
-    # - do NOT flip the account into a persistent RATE_LIMITED state
-    # - apply a short retry delay (prefer explicit retry hints; otherwise backoff)
+    # Upstream `usage_limit_reached` indicates the account is not currently usable. It can be
+    # transient and may not correlate with the weekly quota being fully exhausted, but if we keep
+    # the account "ACTIVE" we end up re-selecting it and repeating failures, and the dashboard is
+    # misleading.
+    #
+    # Policy:
+    # - always apply a retry delay (prefer explicit retry hints; otherwise backoff)
+    # - mark the account RATE_LIMITED until the computed delay expires
+    # - if upstream provides a stable reset boundary far enough in the future, prefer that
     state.error_count += 1
     now = time.time()
     state.last_error_at = now
@@ -195,15 +200,21 @@ def handle_usage_limit_reached(state: AccountState, error: UpstreamError) -> Non
         delay = backoff_seconds(state.error_count)
     state.cooldown_until = now + delay
 
-    # If upstream provides a real reset boundary, treat it as a real rate-limit state so it:
-    # - survives process restarts (persisted via LoadBalancer._sync_state -> accounts.reset_at)
-    # - is visible in the dashboard (account status is no longer misleadingly ACTIVE)
-    #
-    # Guard with a small threshold to avoid "temporary" `usage_limit_reached` blips turning into
-    # persistent multi-hour locks when upstream did not actually provide a meaningful reset.
+    # If upstream provides a real reset boundary far enough in the future, treat it as the
+    # effective reset time. Guard with a small threshold to avoid "temporary"
+    # `usage_limit_reached` blips turning into persistent multi-hour locks when upstream did not
+    # actually provide a meaningful reset.
     if reset_at is not None and (float(reset_at) - now) >= _USAGE_LIMIT_REACHED_PERSIST_THRESHOLD_SECONDS:
         state.status = AccountStatus.RATE_LIMITED
         state.reset_at = float(reset_at)
+        return
+
+    # Otherwise, treat the retry delay as the reset boundary.
+    cooldown_until = state.cooldown_until
+    if cooldown_until is None:
+        return
+    state.status = AccountStatus.RATE_LIMITED
+    state.reset_at = float(cooldown_until)
 
 
 def handle_quota_exceeded(state: AccountState, error: UpstreamError) -> None:

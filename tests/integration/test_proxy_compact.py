@@ -169,7 +169,7 @@ async def test_proxy_compact_usage_limit_marks_account(async_client, monkeypatch
     async with AccountsSessionLocal() as session:
         account = await session.get(Account, expected_account_id)
         assert account is not None
-        assert account.status == AccountStatus.ACTIVE
+        assert account.status == AccountStatus.RATE_LIMITED
 
 
 @pytest.mark.asyncio
