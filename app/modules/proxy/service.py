@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Sequence
 from datetime import timedelta
@@ -59,6 +60,25 @@ logger = logging.getLogger(__name__)
 _TEXT_DELTA_EVENT_TYPES = frozenset({"response.output_text.delta", "response.refusal.delta"})
 _TEXT_DONE_CONTENT_PART_TYPES = frozenset({"output_text", "refusal"})
 
+_CODEX_SESSION_ID_FALLBACK_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{12}$"
+)
+
+
+def _fallback_codex_session_id(sticky_key: str | None) -> str | None:
+    if not sticky_key:
+        return None
+    stripped = sticky_key.strip()
+    if not stripped:
+        return None
+    if _CODEX_SESSION_ID_FALLBACK_RE.fullmatch(stripped):
+        return stripped
+    return None
+
 
 def _maybe_prompt_cache_key_hash(value: str | None) -> str | None:
     if not value:
@@ -114,11 +134,13 @@ class ProxyService:
         _maybe_log_proxy_request_payload("compact", payload, headers)
         _maybe_log_proxy_request_shape("compact", payload, headers)
         filtered = filter_inbound_headers(headers)
-        codex_session_id = self._optional_header_value(filtered, "x-codex-session-id")
-        codex_conversation_id = self._optional_header_value(filtered, "x-codex-conversation-id")
         request_id = ensure_request_id()
         sticky_key = _sticky_key_from_compact_payload(payload)
         prompt_cache_key_hash = _maybe_prompt_cache_key_hash(sticky_key)
+        codex_session_id = self._optional_header_value(filtered, "x-codex-session-id") or _fallback_codex_session_id(
+            sticky_key
+        )
+        codex_conversation_id = self._optional_header_value(filtered, "x-codex-conversation-id")
         retryable_codes = {
             "rate_limit_exceeded",
             "usage_limit_reached",
@@ -703,7 +725,10 @@ class ProxyService:
         account_id_value = account.id
         access_token = self._encryptor.decrypt(account.access_token_encrypted)
         account_id = _header_account_id(account.chatgpt_account_id)
-        codex_session_id = self._optional_header_value(headers, "x-codex-session-id")
+        sticky_key = _sticky_key_from_payload(payload)
+        codex_session_id = self._optional_header_value(headers, "x-codex-session-id") or _fallback_codex_session_id(
+            sticky_key
+        )
         codex_conversation_id = self._optional_header_value(headers, "x-codex-conversation-id")
         model = payload.model
         reasoning_effort = payload.reasoning.effort if payload.reasoning else None

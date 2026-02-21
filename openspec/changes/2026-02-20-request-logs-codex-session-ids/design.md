@@ -15,6 +15,9 @@ avoid emitting the raw values in logs.
 ## Write path
 
 - Extract the two header values from inbound proxy requests.
+- Fallback: if `x-codex-session-id` is missing and the request `prompt_cache_key` is a UUID, treat it
+  as the effective session id and persist it as `codex_session_id`. (Avoid storing arbitrary raw
+  `prompt_cache_key` values to reduce the risk of persisting sensitive identifiers.)
 - Attach them to request-log persistence in both code paths:
   - buffered inserts (`RequestLogCreate` + flush scheduler)
   - direct DB writes (`RequestLogsRepository.add_log`)
@@ -22,4 +25,3 @@ avoid emitting the raw values in logs.
 ## Querying
 
 - Extend request-log search to include the new columns so dashboards can find requests by session id.
-
