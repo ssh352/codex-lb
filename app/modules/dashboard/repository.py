@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Account, RequestLog, UsageHistory
-from app.modules.accounts.repository import AccountsRepository
+from app.modules.accounts.repository import AccountsRepository, AccountStatusUpdate
 from app.modules.request_logs.repository import RequestLogsRepository
 from app.modules.settings.repository import SettingsRepository
 from app.modules.usage.repository import UsageRepository
@@ -20,6 +21,9 @@ class DashboardRepository:
 
     async def list_accounts(self) -> list[Account]:
         return await self._accounts_repo.list_accounts()
+
+    async def bulk_update_status_fields(self, updates: Sequence[AccountStatusUpdate]) -> int:
+        return await self._accounts_repo.bulk_update_status_fields(updates)
 
     async def latest_usage_by_account(self, window: str) -> dict[str, UsageHistory]:
         return await self._usage_repo.latest_by_account(window=window)

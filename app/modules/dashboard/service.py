@@ -13,8 +13,10 @@ from app.core.usage.waste_pacing import (
     compute_secondary_waste_pacing,
 )
 from app.core.utils.time import from_epoch_seconds, to_epoch_seconds_assuming_utc, utcnow
-from app.db.models import UsageHistory
+from app.db.models import AccountStatus, UsageHistory
 from app.modules.accounts.mappers import build_account_summaries
+from app.modules.accounts.repository import AccountStatusUpdate
+from app.modules.accounts.status_reconcile import stale_blocked_account_ids
 from app.modules.dashboard.repository import DashboardRepository
 from app.modules.dashboard.schemas import (
     DashboardOverviewResponse,
@@ -42,6 +44,55 @@ class DashboardService:
         primary_usage = await self._repo.latest_usage_by_account("primary")
         secondary_usage = await self._repo.latest_usage_by_account("secondary")
         pinned_account_ids = set(await self._repo.pinned_account_ids())
+
+        stale_ids = stale_blocked_account_ids(
+            accounts=accounts,
+            primary_usage=primary_usage,
+            secondary_usage=secondary_usage,
+            now_epoch=now_epoch,
+        )
+        if stale_ids:
+            updates: list[AccountStatusUpdate] = []
+            for account in accounts:
+                if account.id not in stale_ids:
+                    continue
+                updates.append(
+                    AccountStatusUpdate(
+                        account_id=account.id,
+                        status=AccountStatus.ACTIVE,
+                        deactivation_reason=None,
+                        reset_at=None,
+                    )
+                )
+                account.status = AccountStatus.ACTIVE
+                account.deactivation_reason = None
+                account.reset_at = None
+            await self._repo.bulk_update_status_fields(updates)
+
+        # Data hygiene: `accounts.reset_at` is a persisted "blocked until" hint. If the account is
+        # not in a blocked status, any stored reset timestamp is stale/inconsistent and should be
+        # cleared so dashboard state reflects actual eligibility.
+        inconsistent_ids = {
+            account.id
+            for account in accounts
+            if account.reset_at is not None
+            and account.status not in (AccountStatus.RATE_LIMITED, AccountStatus.QUOTA_EXCEEDED)
+        }
+        if inconsistent_ids:
+            updates: list[AccountStatusUpdate] = []
+            for account in accounts:
+                if account.id not in inconsistent_ids:
+                    continue
+                updates.append(
+                    AccountStatusUpdate(
+                        account_id=account.id,
+                        status=account.status,
+                        deactivation_reason=account.deactivation_reason,
+                        reset_at=None,
+                    )
+                )
+                account.reset_at = None
+            await self._repo.bulk_update_status_fields(updates)
 
         account_summaries = build_account_summaries(
             accounts=accounts,

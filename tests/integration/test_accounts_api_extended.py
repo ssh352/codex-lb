@@ -11,7 +11,7 @@ from app.core.crypto import TokenEncryptor
 from app.core.utils.time import utcnow
 from app.db.models import Account, AccountStatus
 from app.db.session import AccountsSessionLocal, SessionLocal
-from app.modules.accounts.repository import AccountsRepository
+from app.modules.accounts.repository import AccountsRepository, AccountStatusUpdate
 from app.modules.usage.repository import UsageRepository
 
 pytestmark = pytest.mark.integration
@@ -40,7 +40,14 @@ def _make_auth_json(account_id: str | None, email: str, plan_type: str = "plus")
     return {"tokens": tokens}
 
 
-def _make_account(account_id: str, email: str, plan_type: str = "plus") -> Account:
+def _make_account(
+    account_id: str,
+    email: str,
+    plan_type: str = "plus",
+    *,
+    status: AccountStatus = AccountStatus.ACTIVE,
+    reset_at: int | None = None,
+) -> Account:
     encryptor = TokenEncryptor()
     return Account(
         id=account_id,
@@ -50,8 +57,9 @@ def _make_account(account_id: str, email: str, plan_type: str = "plus") -> Accou
         refresh_token_encrypted=encryptor.encrypt("refresh"),
         id_token_encrypted=encryptor.encrypt("id"),
         last_refresh=utcnow(),
-        status=AccountStatus.ACTIVE,
+        status=status,
         deactivation_reason=None,
+        reset_at=reset_at,
     )
 
 
@@ -164,3 +172,352 @@ async def test_accounts_list_includes_per_account_reset_times(async_client, db_s
     assert accounts["acc_reset_b"]["resetAtPrimary"] == _iso_utc(primary_b)
     assert accounts["acc_reset_a"]["resetAtSecondary"] == _iso_utc(secondary_a)
     assert accounts["acc_reset_b"]["resetAtSecondary"] == _iso_utc(secondary_b)
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_includes_status_reset_at(async_client, db_setup):
+    now_epoch = int(utcnow().replace(tzinfo=timezone.utc).timestamp())
+    blocked_until = now_epoch + 3600
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_blocked",
+                "blocked@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=blocked_until,
+            )
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next((account for account in payload["accounts"] if account["accountId"] == "acc_blocked"), None)
+    assert matched is not None
+    assert matched["status"] == "rate_limited"
+    assert matched["statusResetAt"] == _iso_utc(blocked_until)
+
+
+@pytest.mark.asyncio
+async def test_accounts_repository_clears_reset_at_when_status_becomes_active(db_setup):
+    blocked_until = 1736294400
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_hygiene_active",
+                "hygiene_active@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=blocked_until,
+            )
+        )
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        updated = await accounts_repo.update_status(
+            "acc_hygiene_active",
+            AccountStatus.ACTIVE,
+            None,
+            reset_at=blocked_until,
+        )
+        assert updated is True
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        account = await accounts_repo.get_account("acc_hygiene_active")
+        assert account is not None
+        assert account.status == AccountStatus.ACTIVE
+        assert account.reset_at is None
+
+
+@pytest.mark.asyncio
+async def test_accounts_repository_bulk_update_clears_reset_at_when_not_blocked(db_setup):
+    blocked_until = 1736294400
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_hygiene_pause",
+                "hygiene_pause@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=blocked_until,
+            )
+        )
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        updated = await accounts_repo.bulk_update_status_fields(
+            [
+                AccountStatusUpdate(
+                    account_id="acc_hygiene_pause",
+                    status=AccountStatus.PAUSED,
+                    deactivation_reason=None,
+                    reset_at=blocked_until,
+                )
+            ]
+        )
+        assert updated == 1
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        account = await accounts_repo.get_account("acc_hygiene_pause")
+        assert account is not None
+        assert account.status == AccountStatus.PAUSED
+        assert account.reset_at is None
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_clears_stale_blocked_status(async_client, db_setup):
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_stale_blocked",
+                "stale_blocked@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=1,
+            )
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next((account for account in payload["accounts"] if account["accountId"] == "acc_stale_blocked"), None)
+    assert matched is not None
+    assert matched["status"] == "active"
+    assert matched.get("statusResetAt") is None
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_clears_reset_at_for_active_account(async_client, db_setup):
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_active_with_reset",
+                "active_reset@example.com",
+                status=AccountStatus.ACTIVE,
+                reset_at=1736294400,
+            )
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next(
+        (account for account in payload["accounts"] if account["accountId"] == "acc_active_with_reset"),
+        None,
+    )
+    assert matched is not None
+    assert matched["status"] == "active"
+    assert matched.get("statusResetAt") is None
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        account = await accounts_repo.get_account("acc_active_with_reset")
+        assert account is not None
+        assert account.reset_at is None
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_does_not_clear_blocked_status_when_reset_in_future(async_client, db_setup):
+    now_epoch = int(utcnow().replace(tzinfo=timezone.utc).timestamp())
+    blocked_until = now_epoch + 3600
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_future_blocked",
+                "future_blocked@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=blocked_until,
+            )
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next((account for account in payload["accounts"] if account["accountId"] == "acc_future_blocked"), None)
+    assert matched is not None
+    assert matched["status"] == "rate_limited"
+    assert matched["statusResetAt"] == _iso_utc(blocked_until)
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_does_not_clear_blocked_status_when_reset_unknown(async_client, db_setup):
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_unknown_blocked",
+                "unknown_blocked@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=None,
+            )
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next((account for account in payload["accounts"] if account["accountId"] == "acc_unknown_blocked"), None)
+    assert matched is not None
+    assert matched["status"] == "rate_limited"
+    assert matched.get("statusResetAt") is None
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_clears_stale_rate_limited_status_from_usage_reset(async_client, db_setup):
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_stale_rate_limited_usage",
+                "stale_rate_limited_usage@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=None,
+            )
+        )
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
+        await usage_repo.add_entry(
+            "acc_stale_rate_limited_usage",
+            100.0,
+            window="primary",
+            reset_at=1,
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next(
+        (account for account in payload["accounts"] if account["accountId"] == "acc_stale_rate_limited_usage"),
+        None,
+    )
+    assert matched is not None
+    assert matched["status"] == "active"
+    assert matched.get("statusResetAt") is None
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_clears_stale_quota_exceeded_status_from_usage_reset(async_client, db_setup):
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_stale_quota_exceeded_usage",
+                "stale_quota_exceeded_usage@example.com",
+                status=AccountStatus.QUOTA_EXCEEDED,
+                reset_at=None,
+            )
+        )
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
+        await usage_repo.add_entry(
+            "acc_stale_quota_exceeded_usage",
+            100.0,
+            window="secondary",
+            reset_at=1,
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next(
+        (account for account in payload["accounts"] if account["accountId"] == "acc_stale_quota_exceeded_usage"),
+        None,
+    )
+    assert matched is not None
+    assert matched["status"] == "active"
+    assert matched.get("statusResetAt") is None
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_status_reset_at_falls_back_to_usage_resets(async_client, db_setup):
+    now_epoch = int(utcnow().replace(tzinfo=timezone.utc).timestamp())
+    primary_reset_at = now_epoch + 3600
+    secondary_reset_at = now_epoch + 7200
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_fallback_primary",
+                "fallback_primary@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=None,
+            )
+        )
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_fallback_secondary",
+                "fallback_secondary@example.com",
+                status=AccountStatus.QUOTA_EXCEEDED,
+                reset_at=None,
+            )
+        )
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
+        await usage_repo.add_entry(
+            "acc_fallback_primary",
+            50.0,
+            window="primary",
+            reset_at=primary_reset_at,
+        )
+        await usage_repo.add_entry(
+            "acc_fallback_secondary",
+            100.0,
+            window="secondary",
+            reset_at=secondary_reset_at,
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    accounts = {item["accountId"]: item for item in payload["accounts"]}
+
+    assert accounts["acc_fallback_primary"]["status"] == "rate_limited"
+    assert accounts["acc_fallback_primary"]["statusResetAt"] == _iso_utc(primary_reset_at)
+    assert accounts["acc_fallback_secondary"]["status"] == "quota_exceeded"
+    assert accounts["acc_fallback_secondary"]["statusResetAt"] == _iso_utc(secondary_reset_at)
+
+
+@pytest.mark.asyncio
+async def test_accounts_list_status_reset_at_uses_latest_reset(async_client, db_setup):
+    now_epoch = int(utcnow().replace(tzinfo=timezone.utc).timestamp())
+    stale_reset_at = now_epoch + 60
+    latest_reset_at = now_epoch + 120
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(
+            _make_account(
+                "acc_latest_reset",
+                "latest_reset@example.com",
+                status=AccountStatus.RATE_LIMITED,
+                reset_at=stale_reset_at,
+            )
+        )
+
+    async with SessionLocal() as session:
+        usage_repo = UsageRepository(session)
+        await usage_repo.add_entry(
+            "acc_latest_reset",
+            50.0,
+            window="primary",
+            reset_at=latest_reset_at,
+        )
+
+    response = await async_client.get("/api/accounts")
+    assert response.status_code == 200
+    payload = response.json()
+    accounts = {item["accountId"]: item for item in payload["accounts"]}
+
+    assert accounts["acc_latest_reset"]["status"] == "rate_limited"
+    assert accounts["acc_latest_reset"]["statusResetAt"] == _iso_utc(latest_reset_at)

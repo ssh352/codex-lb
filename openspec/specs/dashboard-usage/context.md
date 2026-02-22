@@ -41,3 +41,15 @@ right now (credit-weighted by plan capacity), so ~23% remains.
 Important nuance: accounts can have different secondary reset timestamps. The consumed/remaining percentages are a
 point-in-time aggregate across accounts’ *current* secondary windows — they do **not** imply all accounts share one
 common “week” or reset moment.
+
+### Stale blocked statuses (“Blocked · Try again now”)
+
+Some UI surfaces show a “Blocked until …” timestamp based on `statusResetAt`. This is distinct from quota-reset
+timestamps and is intended to answer: “when will codex-lb try routing to this account again?”
+
+If an account is persisted as blocked (`rate_limited` / `quota_exceeded`) but its effective `statusResetAt` boundary is
+already in the past, the UI can end up showing “Blocked · Try again now” indefinitely unless persisted state is
+reconciled.
+
+To avoid this confusing operator experience, dashboard APIs reconcile persisted blocked states when the effective
+boundary is `<= now`, and return the account as `active` with `statusResetAt = null`.

@@ -163,7 +163,6 @@
                     </template>
                     <span class="text-muted" x-text="card.remainingText"></span>
                   </div>
-                  <div class="text-muted" x-text="card.meta"></div>
                   <div class="account-actions">
                     <template x-for="action in card.actions" :key="action.label">
                       <button x-text="action.label" @click="handleAccountAction(action, card)"></button>
@@ -529,6 +528,13 @@
 	                  <span class="status-pill" :class="selectedAccount.status"
 	                    x-text="statusLabel(selectedAccount.status)"></span>
 	                </div>
+	                  <template x-if="shouldShowBlockedMeta(selectedAccount)">
+	                    <div>
+	                      <span>Blocked until</span>
+	                      <strong :title="formatDateTimeTitle(selectedAccount.statusResetAt)"
+	                        x-text="formatBlockedUntilLabel(selectedAccount.statusResetAt)"></strong>
+	                    </div>
+	                  </template>
 	                <template x-if="selectedAccount.plan !== 'free'">
 	                  <div><span
 	                      x-text="`Rate limit reset (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></span><strong

@@ -7,7 +7,7 @@ from app.core.auth import DEFAULT_PLAN, extract_id_token_claims
 from app.core.crypto import TokenEncryptor
 from app.core.plan_types import coerce_account_plan_type
 from app.core.utils.time import from_epoch_seconds
-from app.db.models import Account, UsageHistory
+from app.db.models import Account, AccountStatus, UsageHistory
 from app.modules.accounts.schemas import AccountAuthStatus, AccountSummary, AccountTokenStatus, AccountUsage
 
 
@@ -47,6 +47,29 @@ def _account_to_summary(
     secondary_remaining_percent = usage_core.remaining_percent_from_used(secondary_used_percent) or 0.0
     reset_at_primary = from_epoch_seconds(primary_usage.reset_at) if primary_usage is not None else None
     reset_at_secondary = from_epoch_seconds(secondary_usage.reset_at) if secondary_usage is not None else None
+
+    # `status_reset_at` is the dashboard-facing "blocked until" timestamp: the earliest time codex-lb
+    # expects this account to become selectable for routing again.
+    #
+    # It intentionally does *not* mean "when the usage window resets" (that's `reset_at_primary` /
+    # `reset_at_secondary`). In many real cases it will still match the secondary reset, because:
+    # - `quota_exceeded` is defined by weekly exhaustion, and
+    # - upstream `usage_limit_reached` may report a reset boundary equal to the weekly reset.
+    #
+    # Clarification: this is derived from `accounts.reset_at` (persisted, durable "blocked until")
+    # and the latest usage reset timestamps. It is only meaningful for blocked statuses
+    # (RATE_LIMITED / QUOTA_EXCEEDED). If an account is ACTIVE, any stored reset timestamp should
+    # be treated as stale and ignored.
+    status_reset_seconds: int | None = None
+    if account.status == AccountStatus.RATE_LIMITED:
+        usage_reset_seconds = primary_usage.reset_at if primary_usage is not None else None
+        candidates = [entry for entry in (account.reset_at, usage_reset_seconds) if entry is not None]
+        status_reset_seconds = max(candidates) if candidates else None
+    elif account.status == AccountStatus.QUOTA_EXCEEDED:
+        usage_reset_seconds = secondary_usage.reset_at if secondary_usage is not None else None
+        candidates = [entry for entry in (account.reset_at, usage_reset_seconds) if entry is not None]
+        status_reset_seconds = max(candidates) if candidates else None
+    status_reset_at = from_epoch_seconds(status_reset_seconds) if status_reset_seconds is not None else None
     capacity_primary = usage_core.capacity_for_plan(plan_type, "primary")
     capacity_secondary = usage_core.capacity_for_plan(plan_type, "secondary")
     remaining_credits_primary = usage_core.remaining_credits_from_percent(
@@ -63,6 +86,7 @@ def _account_to_summary(
         display_name=account.email,
         plan_type=plan_type,
         status=account.status.value,
+        status_reset_at=status_reset_at,
         pinned=account.id in pinned_account_ids,
         usage=AccountUsage(
             primary_remaining_percent=primary_remaining_percent,

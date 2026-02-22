@@ -9,7 +9,7 @@ from app.core.auth import (
 )
 from app.core.crypto import TokenEncryptor
 from app.core.plan_types import coerce_account_plan_type
-from app.core.utils.time import to_utc_naive, utcnow
+from app.core.utils.time import to_epoch_seconds_assuming_utc, to_utc_naive, utcnow
 from app.db.models import Account, AccountStatus
 from app.modules.accounts.data_repository import AccountsDataRepository
 from app.modules.accounts.list_cache import (
@@ -17,11 +17,12 @@ from app.modules.accounts.list_cache import (
     invalidate_accounts_list_cache,
 )
 from app.modules.accounts.mappers import build_account_summaries
-from app.modules.accounts.repository import AccountsRepository
+from app.modules.accounts.repository import AccountsRepository, AccountStatusUpdate
 from app.modules.accounts.schemas import (
     AccountImportResponse,
     AccountSummary,
 )
+from app.modules.accounts.status_reconcile import stale_blocked_account_ids
 from app.modules.settings.repository import SettingsRepository
 from app.modules.usage.repository import UsageRepository
 from app.modules.usage.updater import UsageUpdater
@@ -56,6 +57,58 @@ class AccountsService:
             else:
                 primary_usage = {}
                 secondary_usage = {}
+
+            now_epoch = to_epoch_seconds_assuming_utc(utcnow())
+            stale_ids = stale_blocked_account_ids(
+                accounts=accounts,
+                primary_usage=primary_usage,
+                secondary_usage=secondary_usage,
+                now_epoch=now_epoch,
+            )
+            if stale_ids:
+                updates: list[AccountStatusUpdate] = []
+                for account in accounts:
+                    if account.id not in stale_ids:
+                        continue
+                    updates.append(
+                        AccountStatusUpdate(
+                            account_id=account.id,
+                            status=AccountStatus.ACTIVE,
+                            deactivation_reason=None,
+                            reset_at=None,
+                        )
+                    )
+                    account.status = AccountStatus.ACTIVE
+                    account.deactivation_reason = None
+                    account.reset_at = None
+                await self._repo.bulk_update_status_fields(updates)
+
+            # Data hygiene: `accounts.reset_at` is a persisted "blocked until" hint. If the account
+            # is not in a blocked status, any stored reset timestamp is stale/inconsistent and
+            # should be cleared. This can happen if earlier versions persisted a reset hint without
+            # also persisting a blocked status.
+            inconsistent_ids = {
+                account.id
+                for account in accounts
+                if account.reset_at is not None
+                and account.status not in (AccountStatus.RATE_LIMITED, AccountStatus.QUOTA_EXCEEDED)
+            }
+            if inconsistent_ids:
+                updates: list[AccountStatusUpdate] = []
+                for account in accounts:
+                    if account.id not in inconsistent_ids:
+                        continue
+                    updates.append(
+                        AccountStatusUpdate(
+                            account_id=account.id,
+                            status=account.status,
+                            deactivation_reason=account.deactivation_reason,
+                            reset_at=None,
+                        )
+                    )
+                    account.reset_at = None
+                await self._repo.bulk_update_status_fields(updates)
+
             pinned_ids = set(await self._settings_repo.pinned_account_ids()) if self._settings_repo else set()
             return build_account_summaries(
                 accounts=accounts,

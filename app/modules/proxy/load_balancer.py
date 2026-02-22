@@ -764,16 +764,22 @@ class LoadBalancer:
             account = account_map.get(state.account_id)
             if not account:
                 continue
-            if account.status != state.status or account.deactivation_reason != state.deactivation_reason:
+            reset_at_int = int(state.reset_at) if state.reset_at is not None else None
+            status_changed = account.status != state.status
+            reason_changed = account.deactivation_reason != state.deactivation_reason
+            reset_changed = account.reset_at != reset_at_int
+            if status_changed or reason_changed or reset_changed:
                 updates.append(
                     AccountStatusUpdate(
                         account_id=account.id,
                         status=state.status,
                         deactivation_reason=state.deactivation_reason,
+                        reset_at=reset_at_int,
                     )
                 )
                 account.status = state.status
                 account.deactivation_reason = state.deactivation_reason
+                account.reset_at = reset_at_int
         if updates:
             await accounts_repo.bulk_update_status_fields(updates)
 

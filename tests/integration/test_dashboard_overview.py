@@ -104,3 +104,32 @@ async def test_dashboard_overview_marks_pinned_accounts(async_client, db_setup):
     matched = next((account for account in payload["accounts"] if account["accountId"] == "acc_pin_dash"), None)
     assert matched is not None
     assert matched["pinned"] is True
+
+
+@pytest.mark.asyncio
+async def test_dashboard_overview_clears_stale_blocked_status(async_client, db_setup):
+    encryptor = TokenEncryptor()
+    account = Account(
+        id="acc_stale_dash",
+        email="stale_dash@example.com",
+        plan_type="plus",
+        access_token_encrypted=encryptor.encrypt("access"),
+        refresh_token_encrypted=encryptor.encrypt("refresh"),
+        id_token_encrypted=encryptor.encrypt("id"),
+        last_refresh=utcnow(),
+        status=AccountStatus.RATE_LIMITED,
+        deactivation_reason=None,
+        reset_at=1,
+    )
+
+    async with AccountsSessionLocal() as accounts_session:
+        accounts_repo = AccountsRepository(accounts_session)
+        await accounts_repo.upsert(account)
+
+    response = await async_client.get("/api/dashboard/overview?requestLimit=1&requestOffset=0")
+    assert response.status_code == 200
+    payload = response.json()
+    matched = next((item for item in payload["accounts"] if item["accountId"] == "acc_stale_dash"), None)
+    assert matched is not None
+    assert matched["status"] == "active"
+    assert matched.get("statusResetAt") is None

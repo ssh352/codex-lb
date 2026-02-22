@@ -30,6 +30,7 @@ class AccountSummary(DashboardModel):
     display_name: str
     plan_type: str
     status: str
+    status_reset_at: datetime | None = None
     pinned: bool = False
     usage: AccountUsage | None = None
     reset_at_primary: datetime | None = None

@@ -477,33 +477,41 @@
 		return `${minutes}:${String(remainder).padStart(2, "0")}`;
 	};
 
-	const formatQuotaResetLabel = (resetAt) => {
-		const date = parseDate(resetAt);
-		if (!date || date.getTime() <= 0) {
-			return RESET_ERROR_LABEL;
-		}
-		const diffMs = date.getTime() - Date.now();
-		if (diffMs <= 0) {
-			return "now";
-		}
-		return formatRelative(diffMs);
-	};
-
-		const formatQuotaResetMeta = (resetAtSecondary, windowMinutesSecondary) => {
-			const labelSecondary = formatQuotaResetLabel(resetAtSecondary);
-			const windowSecondary = formatWindowLabel(
-				"secondary",
-			windowMinutesSecondary,
-		);
-		const secondaryOk = labelSecondary !== RESET_ERROR_LABEL;
-		if (!secondaryOk) {
-			return "Quota reset unavailable";
+		const formatQuotaResetLabel = (resetAt) => {
+			const date = parseDate(resetAt);
+			if (!date || date.getTime() <= 0) {
+				return RESET_ERROR_LABEL;
 			}
-			return `Quota reset (${windowSecondary}) · ${labelSecondary}`;
+			const diffMs = date.getTime() - Date.now();
+			if (diffMs <= 0) {
+				return "now";
+			}
+			return formatRelative(diffMs);
 		};
 
-	const buildUsageWindowTitle = (key, minutes) =>
-		`Remaining quota by account (${formatWindowLabel(key, minutes)})`;
+		const formatBlockedUntilLabel = (resetAt) => {
+			const label = formatQuotaResetLabel(resetAt);
+			return label === RESET_ERROR_LABEL ? "Unavailable" : label;
+		};
+
+		const formatDateTimeTitle = (iso) => {
+			const formatted = formatTimeLong(iso);
+			if (!formatted || formatted.time === "--" || formatted.date === "--") {
+				return "";
+			}
+			return `${formatted.time} · ${formatted.date}`;
+		};
+
+		const shouldShowBlockedMeta = (account) => {
+			if (!account?.statusResetAt) {
+				return false;
+			}
+			const status = String(account?.status ?? "").trim().toLowerCase();
+			return status === "limited" || status === "exceeded";
+		};
+
+		const buildUsageWindowTitle = (key, minutes) =>
+			`Remaining quota by account (${formatWindowLabel(key, minutes)})`;
 
 	const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -681,6 +689,7 @@
 			plan: account.planType,
 			status: normalizeAccountStatus(account.status),
 			pinned: Boolean(account.pinned),
+			statusResetAt: account.statusResetAt ?? null,
 			usage: {
 				primaryRemainingPercent: toNumber(usage.primaryRemainingPercent) ?? 0,
 				secondaryRemainingPercent:
@@ -1174,26 +1183,25 @@
 			};
 			});
 
-		const accountCards = accounts.map((account) => {
-			const secondaryRemaining =
-				toNumber(account.usage?.secondaryRemainingPercent) || 0;
-			const remainingRounded = formatPercentValue(secondaryRemaining);
-			return {
-				email: account.email,
-				accountId: account.id,
-				plan: planLabel(account.plan),
-				status: {
-					class: account.status,
-					label: statusLabel(account.status),
-				},
-					remaining: remainingRounded,
-					remainingText: formatPercent(secondaryRemaining),
-					progressClass: calculateProgressClass(account.status, secondaryRemaining),
-					marquee: account.status === "deactivated",
-					meta: formatQuotaResetMeta(account.resetAtSecondary, secondaryWindowMinutes),
-					actions: buildAccountActions(account),
-				};
-			});
+			const accountCards = accounts.map((account) => {
+				const secondaryRemaining =
+					toNumber(account.usage?.secondaryRemainingPercent) || 0;
+				const remainingRounded = formatPercentValue(secondaryRemaining);
+				return {
+					email: account.email,
+					accountId: account.id,
+					plan: planLabel(account.plan),
+					status: {
+						class: account.status,
+						label: statusLabel(account.status),
+					},
+						remaining: remainingRounded,
+						remainingText: formatPercent(secondaryRemaining),
+						progressClass: calculateProgressClass(account.status, secondaryRemaining),
+						marquee: account.status === "deactivated",
+						actions: buildAccountActions(account),
+					};
+				});
 
 		const requests = state.dashboardData.recentRequests.map((request) => {
 			const rawError = request.errorMessage || request.errorCode || "";
@@ -3096,13 +3104,16 @@
 			formatWindowLabel,
 			formatPercentValue,
 			formatRate,
-			formatTimeLong,
-			formatCountdown,
-			formatQuotaResetLabel,
-			formatAccessTokenLabel,
-			formatRefreshTokenLabel,
-			formatAccessTokenLabel,
-			formatRefreshTokenLabel,
+				formatTimeLong,
+				formatDateTimeTitle,
+				formatCountdown,
+				shouldShowBlockedMeta,
+				formatQuotaResetLabel,
+				formatBlockedUntilLabel,
+				formatAccessTokenLabel,
+				formatRefreshTokenLabel,
+				formatAccessTokenLabel,
+				formatRefreshTokenLabel,
 			formatIdTokenLabel,
 			theme: (() => {
 				try {

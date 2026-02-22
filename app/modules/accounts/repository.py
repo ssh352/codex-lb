@@ -59,10 +59,14 @@ class AccountsRepository:
         deactivation_reason: str | None = None,
         reset_at: int | None = None,
     ) -> bool:
+        # `reset_at` is a persisted "blocked until" hint and is only meaningful when the account is
+        # in a blocked state (RATE_LIMITED / QUOTA_EXCEEDED). Clear it for all other statuses to
+        # avoid stale/inconsistent DB state (e.g., ACTIVE with a non-null reset timestamp).
+        normalized_reset_at = _normalize_reset_at_for_status(status, reset_at)
         result = await self._session.execute(
             update(Account)
             .where(Account.id == account_id)
-            .values(status=status, deactivation_reason=deactivation_reason, reset_at=reset_at)
+            .values(status=status, deactivation_reason=deactivation_reason, reset_at=normalized_reset_at)
             .returning(Account.id)
         )
         await self._session.commit()
@@ -73,10 +77,15 @@ class AccountsRepository:
             return 0
         updated = 0
         for entry in updates:
+            normalized_reset_at = _normalize_reset_at_for_status(entry.status, entry.reset_at)
             result = await self._session.execute(
                 update(Account)
                 .where(Account.id == entry.account_id)
-                .values(status=entry.status, deactivation_reason=entry.deactivation_reason)
+                .values(
+                    status=entry.status,
+                    deactivation_reason=entry.deactivation_reason,
+                    reset_at=normalized_reset_at,
+                )
                 .returning(Account.id)
             )
             if result.scalar_one_or_none() is not None:
@@ -129,7 +138,7 @@ def _apply_account_updates(target: Account, source: Account) -> None:
     target.last_refresh = source.last_refresh
     target.status = source.status
     target.deactivation_reason = source.deactivation_reason
-    target.reset_at = source.reset_at
+    target.reset_at = _normalize_reset_at_for_status(source.status, source.reset_at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,3 +146,10 @@ class AccountStatusUpdate:
     account_id: str
     status: AccountStatus
     deactivation_reason: str | None
+    reset_at: int | None
+
+
+def _normalize_reset_at_for_status(status: AccountStatus, reset_at: int | None) -> int | None:
+    if status in (AccountStatus.RATE_LIMITED, AccountStatus.QUOTA_EXCEEDED):
+        return reset_at
+    return None
