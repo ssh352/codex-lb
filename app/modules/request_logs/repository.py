@@ -3,13 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 
 import anyio
-from sqlalchemy import String, and_, cast, or_, select
+from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy import exc as sa_exc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.utils.request_id import ensure_request_id
 from app.core.utils.time import utcnow
 from app.db.models import RequestLog
+from app.modules.request_logs.aggregates import (
+    RequestLogModelUsageAggregate,
+    RequestLogsUsageAggregates,
+)
 
 
 class RequestLogsRepository:
@@ -212,6 +216,101 @@ class RequestLogsRepository:
         account_ids = [row[0] for row in account_rows.all() if row[0]]
         model_options = [(row[0], row[1]) for row in model_rows.all() if row[0]]
         return account_ids, model_options
+
+    async def aggregate_usage_since(
+        self,
+        since: datetime,
+        *,
+        until: datetime | None = None,
+    ) -> RequestLogsUsageAggregates:
+        conditions = [RequestLog.requested_at >= since]
+        if until is not None:
+            conditions.append(RequestLog.requested_at <= until)
+
+        effective_output = func.coalesce(RequestLog.output_tokens, RequestLog.reasoning_tokens)
+        tokens_expr = func.coalesce(RequestLog.input_tokens, 0) + func.coalesce(effective_output, 0)
+
+        cached_raw = RequestLog.cached_input_tokens
+        cached_nonneg = case((cached_raw < 0, 0), else_=cached_raw)
+        cached_nonneg_coalesced = func.coalesce(cached_nonneg, 0)
+        cached_clamped = case(
+            (
+                and_(
+                    RequestLog.input_tokens.is_not(None),
+                    cached_nonneg_coalesced > RequestLog.input_tokens,
+                ),
+                RequestLog.input_tokens,
+            ),
+            else_=cached_nonneg_coalesced,
+        )
+
+        summary_stmt = select(
+            func.count(RequestLog.id).label("total_requests"),
+            func.coalesce(func.sum(case((RequestLog.status != "success", 1), else_=0)), 0).label("error_requests"),
+            func.coalesce(func.sum(tokens_expr), 0).label("tokens_sum"),
+            func.coalesce(func.sum(cached_clamped), 0).label("cached_input_tokens_sum"),
+        ).where(and_(*conditions))
+        summary_result = await self._session.execute(summary_stmt)
+        summary = summary_result.one()
+
+        top_error_stmt = (
+            select(RequestLog.error_code, func.count(RequestLog.id).label("count"))
+            .where(
+                and_(
+                    *conditions,
+                    RequestLog.status != "success",
+                    RequestLog.error_code.is_not(None),
+                    RequestLog.error_code != "",
+                )
+            )
+            .group_by(RequestLog.error_code)
+            .order_by(func.count(RequestLog.id).desc(), RequestLog.error_code.asc())
+            .limit(1)
+        )
+        top_error_result = await self._session.execute(top_error_stmt)
+        top_error_row = top_error_result.one_or_none()
+        top_error = str(top_error_row[0]) if top_error_row and top_error_row[0] else None
+
+        by_model_stmt = (
+            select(
+                RequestLog.model.label("model"),
+                func.coalesce(func.sum(RequestLog.input_tokens), 0).label("input_tokens_sum"),
+                func.coalesce(func.sum(effective_output), 0).label("output_tokens_sum"),
+                func.coalesce(func.sum(cached_clamped), 0).label("cached_input_tokens_sum"),
+            )
+            .where(
+                and_(
+                    *conditions,
+                    RequestLog.model.is_not(None),
+                    RequestLog.model != "",
+                    RequestLog.input_tokens.is_not(None),
+                    effective_output.is_not(None),
+                )
+            )
+            .group_by(RequestLog.model)
+            .order_by(RequestLog.model.asc())
+        )
+        by_model_result = await self._session.execute(by_model_stmt)
+        by_model_rows = by_model_result.all()
+        by_model = [
+            RequestLogModelUsageAggregate(
+                model=str(row.model),
+                input_tokens_sum=int(row.input_tokens_sum or 0),
+                output_tokens_sum=int(row.output_tokens_sum or 0),
+                cached_input_tokens_sum=int(row.cached_input_tokens_sum or 0),
+            )
+            for row in by_model_rows
+            if row and row.model
+        ]
+
+        return RequestLogsUsageAggregates(
+            total_requests=int(summary.total_requests or 0),
+            error_requests=int(summary.error_requests or 0),
+            tokens_sum=int(summary.tokens_sum or 0),
+            cached_input_tokens_sum=int(summary.cached_input_tokens_sum or 0),
+            top_error=top_error,
+            by_model=by_model,
+        )
 
 
 async def _safe_rollback(session: AsyncSession) -> None:

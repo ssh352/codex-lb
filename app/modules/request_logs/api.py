@@ -10,7 +10,7 @@ from app.modules.request_logs.schemas import (
     RequestLogModelOption,
     RequestLogsResponse,
 )
-from app.modules.request_logs.service import RequestLogModelOption as ServiceRequestLogModelOption
+from app.modules.request_logs.types import RequestLogModelOption as ServiceRequestLogModelOption
 
 router = APIRouter(prefix="/api/request-logs", tags=["dashboard"])
 

@@ -6,6 +6,7 @@ from app.core import usage as usage_core
 from app.core.usage.types import UsageWindowRow
 from app.core.utils.time import utcnow
 from app.modules.accounts.repository import AccountsRepository
+from app.modules.request_logs.aggregates import empty_request_logs_usage_aggregates
 from app.modules.request_logs.repository import RequestLogsRepository
 from app.modules.usage.builders import (
     build_usage_history_response,
@@ -41,9 +42,12 @@ class UsageService:
         secondary_minutes = await self._usage_repo.latest_window_minutes("secondary")
         if secondary_minutes is None:
             secondary_minutes = usage_core.default_window_minutes("secondary")
-        logs_secondary = []
         if secondary_minutes:
-            logs_secondary = await self._logs_repo.list_since(now - timedelta(minutes=secondary_minutes))
+            logs_secondary = await self._logs_repo.aggregate_usage_since(
+                now - timedelta(minutes=secondary_minutes),
+            )
+        else:
+            logs_secondary = empty_request_logs_usage_aggregates()
         return build_usage_summary_response(
             accounts=accounts,
             primary_rows=primary_rows,

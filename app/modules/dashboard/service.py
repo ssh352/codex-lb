@@ -15,7 +15,6 @@ from app.core.usage.waste_pacing import (
 from app.core.utils.time import from_epoch_seconds, to_epoch_seconds_assuming_utc, utcnow
 from app.db.models import AccountStatus, UsageHistory
 from app.modules.accounts.mappers import build_account_summaries
-from app.modules.accounts.repository import AccountStatusUpdate
 from app.modules.accounts.status_reconcile import stale_blocked_account_ids
 from app.modules.dashboard.repository import DashboardRepository
 from app.modules.dashboard.schemas import (
@@ -25,6 +24,7 @@ from app.modules.dashboard.schemas import (
     DashboardWastePacingAccount,
     DashboardWastePacingSummary,
 )
+from app.modules.request_logs.aggregates import empty_request_logs_usage_aggregates
 from app.modules.request_logs.mappers import to_request_log_entry
 from app.modules.usage.builders import (
     build_usage_summary_response,
@@ -41,8 +41,7 @@ class DashboardService:
         now = utcnow()
         now_epoch = to_epoch_seconds_assuming_utc(now)
         accounts = await self._repo.list_accounts()
-        primary_usage = await self._repo.latest_usage_by_account("primary")
-        secondary_usage = await self._repo.latest_usage_by_account("secondary")
+        primary_usage, secondary_usage = await self._repo.latest_primary_secondary_usage_by_account()
         pinned_account_ids = set(await self._repo.pinned_account_ids())
 
         stale_ids = stale_blocked_account_ids(
@@ -52,22 +51,12 @@ class DashboardService:
             now_epoch=now_epoch,
         )
         if stale_ids:
-            updates: list[AccountStatusUpdate] = []
+            await self._repo.bulk_set_accounts_active(sorted(stale_ids))
             for account in accounts:
-                if account.id not in stale_ids:
-                    continue
-                updates.append(
-                    AccountStatusUpdate(
-                        account_id=account.id,
-                        status=AccountStatus.ACTIVE,
-                        deactivation_reason=None,
-                        reset_at=None,
-                    )
-                )
-                account.status = AccountStatus.ACTIVE
-                account.deactivation_reason = None
-                account.reset_at = None
-            await self._repo.bulk_update_status_fields(updates)
+                if account.id in stale_ids:
+                    account.status = AccountStatus.ACTIVE
+                    account.deactivation_reason = None
+                    account.reset_at = None
 
         # Data hygiene: `accounts.reset_at` is a persisted "blocked until" hint. If the account is
         # not in a blocked status, any stored reset timestamp is stale/inconsistent and should be
@@ -79,20 +68,10 @@ class DashboardService:
             and account.status not in (AccountStatus.RATE_LIMITED, AccountStatus.QUOTA_EXCEEDED)
         }
         if inconsistent_ids:
-            updates: list[AccountStatusUpdate] = []
+            await self._repo.bulk_clear_accounts_reset_at(sorted(inconsistent_ids))
             for account in accounts:
-                if account.id not in inconsistent_ids:
-                    continue
-                updates.append(
-                    AccountStatusUpdate(
-                        account_id=account.id,
-                        status=account.status,
-                        deactivation_reason=account.deactivation_reason,
-                        reset_at=None,
-                    )
-                )
-                account.reset_at = None
-            await self._repo.bulk_update_status_fields(updates)
+                if account.id in inconsistent_ids:
+                    account.reset_at = None
 
         account_summaries = build_account_summaries(
             accounts=accounts,
@@ -108,9 +87,12 @@ class DashboardService:
         secondary_minutes = await self._repo.latest_window_minutes("secondary")
         if secondary_minutes is None:
             secondary_minutes = usage_core.default_window_minutes("secondary")
-        logs_secondary = []
         if secondary_minutes:
-            logs_secondary = await self._repo.list_logs_since(now - timedelta(minutes=secondary_minutes))
+            logs_secondary = await self._repo.aggregate_request_logs_usage_since(
+                now - timedelta(minutes=secondary_minutes),
+            )
+        else:
+            logs_secondary = empty_request_logs_usage_aggregates()
 
         summary = build_usage_summary_response(
             accounts=accounts,

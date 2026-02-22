@@ -1,15 +1,7 @@
 from __future__ import annotations
 
-from typing import cast
-
 from app.core import usage as usage_core
-from app.core.usage.logs import (
-    RequestLogLike,
-    cached_input_tokens_from_log,
-    total_tokens_from_log,
-    usage_tokens_from_log,
-)
-from app.core.usage.pricing import CostItem, calculate_costs
+from app.core.usage.pricing import CostItem, UsageTokens, calculate_costs
 from app.core.usage.types import (
     UsageCostSummary,
     UsageMetricsSummary,
@@ -18,7 +10,8 @@ from app.core.usage.types import (
     UsageWindowSnapshot,
 )
 from app.core.utils.time import from_epoch_seconds
-from app.db.models import Account, RequestLog
+from app.db.models import Account
+from app.modules.request_logs.aggregates import RequestLogsUsageAggregates
 from app.modules.usage.schemas import (
     UsageCost,
     UsageCostByModel,
@@ -36,13 +29,24 @@ def build_usage_summary_response(
     accounts: list[Account],
     primary_rows: list[UsageWindowRow],
     secondary_rows: list[UsageWindowRow],
-    logs_secondary: list[RequestLog],
+    logs_secondary: RequestLogsUsageAggregates,
 ) -> UsageSummaryResponse:
     account_map = {account.id: account for account in accounts}
     primary_window = usage_core.summarize_usage_window(primary_rows, account_map, "primary")
     secondary_window = usage_core.summarize_usage_window(secondary_rows, account_map, "secondary")
 
-    cost_items = [item for item in (_log_to_cost_item(log) for log in logs_secondary) if item]
+    cost_items = [
+        CostItem(
+            model=entry.model,
+            usage=UsageTokens(
+                input_tokens=float(entry.input_tokens_sum),
+                output_tokens=float(entry.output_tokens_sum),
+                cached_input_tokens=float(entry.cached_input_tokens_sum),
+            ),
+        )
+        for entry in logs_secondary.by_model
+        if entry.model
+    ]
     cost = calculate_costs(cost_items)
     metrics = _usage_metrics(logs_secondary)
 
@@ -105,23 +109,15 @@ def _build_account_history(
     return results
 
 
-def _log_to_cost_item(log: RequestLog) -> CostItem | None:
-    model = log.model
-    usage = usage_tokens_from_log(cast(RequestLogLike, log))
-    if not model or not usage:
-        return None
-    return CostItem(model=model, usage=usage)
-
-
-def _usage_metrics(logs_secondary: list[RequestLog]) -> UsageMetricsSummary:
-    total_requests = len(logs_secondary)
-    error_logs = [log for log in logs_secondary if log.status != "success"]
+def _usage_metrics(logs_secondary: RequestLogsUsageAggregates) -> UsageMetricsSummary:
+    total_requests = logs_secondary.total_requests
+    error_requests = logs_secondary.error_requests
     error_rate: float | None = None
     if total_requests > 0:
-        error_rate = len(error_logs) / total_requests
-    top_error = _top_error_code(error_logs)
-    tokens_secondary = _sum_tokens(logs_secondary)
-    cached_tokens_secondary = _sum_cached_input_tokens(logs_secondary)
+        error_rate = error_requests / total_requests
+    top_error = logs_secondary.top_error
+    tokens_secondary = logs_secondary.tokens_sum
+    cached_tokens_secondary = logs_secondary.cached_input_tokens_sum
     return UsageMetricsSummary(
         requests_7d=total_requests,
         tokens_secondary_window=tokens_secondary,
@@ -129,32 +125,6 @@ def _usage_metrics(logs_secondary: list[RequestLog]) -> UsageMetricsSummary:
         error_rate_7d=error_rate,
         top_error=top_error,
     )
-
-
-def _sum_tokens(logs: list[RequestLog]) -> int:
-    total = 0
-    for log in logs:
-        total += total_tokens_from_log(cast(RequestLogLike, log)) or 0
-    return total
-
-
-def _sum_cached_input_tokens(logs: list[RequestLog]) -> int:
-    total = 0
-    for log in logs:
-        total += cached_input_tokens_from_log(cast(RequestLogLike, log)) or 0
-    return total
-
-
-def _top_error_code(logs: list[RequestLog]) -> str | None:
-    counts: dict[str, int] = {}
-    for log in logs:
-        code = log.error_code
-        if not code:
-            continue
-        counts[code] = counts.get(code, 0) + 1
-    if not counts:
-        return None
-    return max(counts.items(), key=lambda item: item[1])[0]
 
 
 def _summary_payload_to_response(payload: UsageSummaryPayload) -> UsageSummaryResponse:

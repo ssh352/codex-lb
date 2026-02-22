@@ -17,7 +17,7 @@ from app.modules.accounts.list_cache import (
     invalidate_accounts_list_cache,
 )
 from app.modules.accounts.mappers import build_account_summaries
-from app.modules.accounts.repository import AccountsRepository, AccountStatusUpdate
+from app.modules.accounts.repository import AccountsRepository
 from app.modules.accounts.schemas import (
     AccountImportResponse,
     AccountSummary,
@@ -66,22 +66,12 @@ class AccountsService:
                 now_epoch=now_epoch,
             )
             if stale_ids:
-                updates: list[AccountStatusUpdate] = []
+                await self._repo.bulk_set_active(sorted(stale_ids))
                 for account in accounts:
-                    if account.id not in stale_ids:
-                        continue
-                    updates.append(
-                        AccountStatusUpdate(
-                            account_id=account.id,
-                            status=AccountStatus.ACTIVE,
-                            deactivation_reason=None,
-                            reset_at=None,
-                        )
-                    )
-                    account.status = AccountStatus.ACTIVE
-                    account.deactivation_reason = None
-                    account.reset_at = None
-                await self._repo.bulk_update_status_fields(updates)
+                    if account.id in stale_ids:
+                        account.status = AccountStatus.ACTIVE
+                        account.deactivation_reason = None
+                        account.reset_at = None
 
             # Data hygiene: `accounts.reset_at` is a persisted "blocked until" hint. If the account
             # is not in a blocked status, any stored reset timestamp is stale/inconsistent and
@@ -94,20 +84,10 @@ class AccountsService:
                 and account.status not in (AccountStatus.RATE_LIMITED, AccountStatus.QUOTA_EXCEEDED)
             }
             if inconsistent_ids:
-                updates: list[AccountStatusUpdate] = []
+                await self._repo.bulk_clear_reset_at(sorted(inconsistent_ids))
                 for account in accounts:
-                    if account.id not in inconsistent_ids:
-                        continue
-                    updates.append(
-                        AccountStatusUpdate(
-                            account_id=account.id,
-                            status=account.status,
-                            deactivation_reason=account.deactivation_reason,
-                            reset_at=None,
-                        )
-                    )
-                    account.reset_at = None
-                await self._repo.bulk_update_status_fields(updates)
+                    if account.id in inconsistent_ids:
+                        account.reset_at = None
 
             pinned_ids = set(await self._settings_repo.pinned_account_ids()) if self._settings_repo else set()
             return build_account_summaries(

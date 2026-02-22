@@ -25,6 +25,9 @@ from app.db.models import Account, Base  # noqa: E402
 from app.db.session import accounts_engine, engine  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.modules.accounts.list_cache import invalidate_accounts_list_cache  # noqa: E402
+from app.modules.request_logs.options_cache import (  # noqa: E402
+    invalidate_request_log_options_cache,
+)
 
 
 async def _reset_databases() -> None:
@@ -45,6 +48,7 @@ async def app_instance():
     app = create_app()
     await _reset_databases()
     invalidate_accounts_list_cache()
+    invalidate_request_log_options_cache()
     return app
 
 
@@ -59,6 +63,7 @@ async def dispose_engine():
 async def db_setup():
     await _reset_databases()
     invalidate_accounts_list_cache()
+    invalidate_request_log_options_cache()
     return True
 
 

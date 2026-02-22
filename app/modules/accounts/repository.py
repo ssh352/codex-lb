@@ -93,6 +93,33 @@ class AccountsRepository:
         await self._session.commit()
         return updated
 
+    async def bulk_set_active(self, account_ids: Sequence[str]) -> int:
+        ids = [value for value in account_ids if value]
+        if not ids:
+            return 0
+        result = await self._session.execute(
+            update(Account)
+            .where(Account.id.in_(ids))
+            .values(
+                status=AccountStatus.ACTIVE,
+                deactivation_reason=None,
+                reset_at=None,
+            )
+            .returning(Account.id)
+        )
+        await self._session.commit()
+        return len(result.scalars().all())
+
+    async def bulk_clear_reset_at(self, account_ids: Sequence[str]) -> int:
+        ids = [value for value in account_ids if value]
+        if not ids:
+            return 0
+        result = await self._session.execute(
+            update(Account).where(Account.id.in_(ids)).values(reset_at=None).returning(Account.id)
+        )
+        await self._session.commit()
+        return len(result.scalars().all())
+
     async def delete(self, account_id: str) -> bool:
         result = await self._session.execute(delete(Account).where(Account.id == account_id).returning(Account.id))
         await self._session.commit()

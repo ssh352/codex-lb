@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 
 from app.modules.accounts.repository import AccountsRepository
@@ -9,28 +8,14 @@ from app.modules.request_logs.mappers import (
     RATE_LIMIT_CODES,
     to_request_log_entry,
 )
+from app.modules.request_logs.options_cache import get_or_build_request_log_options
 from app.modules.request_logs.repository import RequestLogsRepository
 from app.modules.request_logs.schemas import RequestLogEntry
-
-
-@dataclass(frozen=True, slots=True)
-class RequestLogModelOption:
-    model: str
-    reasoning_effort: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class RequestLogStatusFilter:
-    include_success: bool
-    include_error_other: bool
-    error_codes_in: list[str] | None
-    error_codes_excluding: list[str] | None
-
-
-@dataclass(frozen=True, slots=True)
-class RequestLogFilterOptions:
-    account_ids: list[str]
-    model_options: list[RequestLogModelOption]
+from app.modules.request_logs.types import (
+    RequestLogFilterOptions,
+    RequestLogModelOption,
+    RequestLogStatusFilter,
+)
 
 
 class RequestLogsService:
@@ -81,22 +66,25 @@ class RequestLogsService:
         until: datetime | None = None,
         status: list[str] | None = None,
     ) -> RequestLogFilterOptions:
-        status_filter = _map_status_filter(status)
-        account_ids, model_options = await self._repo.list_filter_options(
-            since=since,
-            until=until,
-            include_success=status_filter.include_success,
-            include_error_other=status_filter.include_error_other,
-            error_codes_in=status_filter.error_codes_in,
-            error_codes_excluding=status_filter.error_codes_excluding,
-        )
-        return RequestLogFilterOptions(
-            account_ids=account_ids,
-            model_options=[
-                RequestLogModelOption(model=model, reasoning_effort=reasoning_effort)
-                for model, reasoning_effort in model_options
-            ],
-        )
+        async def _build() -> RequestLogFilterOptions:
+            status_filter = _map_status_filter(status)
+            account_ids, model_options = await self._repo.list_filter_options(
+                since=since,
+                until=until,
+                include_success=status_filter.include_success,
+                include_error_other=status_filter.include_error_other,
+                error_codes_in=status_filter.error_codes_in,
+                error_codes_excluding=status_filter.error_codes_excluding,
+            )
+            return RequestLogFilterOptions(
+                account_ids=account_ids,
+                model_options=[
+                    RequestLogModelOption(model=model, reasoning_effort=reasoning_effort)
+                    for model, reasoning_effort in model_options
+                ],
+            )
+
+        return await get_or_build_request_log_options(status=status, since=since, until=until, build=_build)
 
 
 def _map_status_filter(status: list[str] | None) -> RequestLogStatusFilter:
