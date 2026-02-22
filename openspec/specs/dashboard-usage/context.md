@@ -42,13 +42,13 @@ Important nuance: accounts can have different secondary reset timestamps. The co
 point-in-time aggregate across accounts’ *current* secondary windows — they do **not** imply all accounts share one
 common “week” or reset moment.
 
-### Stale blocked statuses (“Blocked · Try again now”)
+### Stale blocked statuses (“Retry at now”)
 
-Some UI surfaces show a “Blocked until …” timestamp based on `statusResetAt`. This is distinct from quota-reset
+Some UI surfaces show a “Retry at …” timestamp based on `statusResetAt`. This is distinct from quota-reset
 timestamps and is intended to answer: “when will codex-lb try routing to this account again?”
 
 If an account is persisted as blocked (`rate_limited` / `quota_exceeded`) but its effective `statusResetAt` boundary is
-already in the past, the UI can end up showing “Blocked · Try again now” indefinitely unless persisted state is
+already in the past, the UI can end up showing a retry boundary of “now” indefinitely unless persisted state is
 reconciled.
 
 To avoid this confusing operator experience, dashboard APIs reconcile persisted blocked states when the effective

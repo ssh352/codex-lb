@@ -477,38 +477,36 @@
 		return `${minutes}:${String(remainder).padStart(2, "0")}`;
 	};
 
-		const formatQuotaResetLabel = (resetAt) => {
-			const date = parseDate(resetAt);
-			if (!date || date.getTime() <= 0) {
-				return RESET_ERROR_LABEL;
+			const formatQuotaResetLabel = (resetAt) => {
+				const date = parseDate(resetAt);
+				if (!date || date.getTime() <= 0) {
+					return RESET_ERROR_LABEL;
 			}
 			const diffMs = date.getTime() - Date.now();
 			if (diffMs <= 0) {
 				return "now";
-			}
-			return formatRelative(diffMs);
-		};
+				}
+				return formatRelative(diffMs);
+			};
 
-		const formatBlockedUntilLabel = (resetAt) => {
-			const label = formatQuotaResetLabel(resetAt);
-			return label === RESET_ERROR_LABEL ? "Unavailable" : label;
-		};
+			const formatDateTimeTitle = (iso) => {
+				const formatted = formatTimeLong(iso);
+				if (!formatted || formatted.time === "--" || formatted.date === "--") {
+					return "";
+				}
+				return `${formatted.time} · ${formatted.date}`;
+			};
 
-		const formatDateTimeTitle = (iso) => {
-			const formatted = formatTimeLong(iso);
-			if (!formatted || formatted.time === "--" || formatted.date === "--") {
-				return "";
-			}
-			return `${formatted.time} · ${formatted.date}`;
-		};
-
-		const shouldShowBlockedMeta = (account) => {
-			if (!account?.statusResetAt) {
-				return false;
-			}
-			const status = String(account?.status ?? "").trim().toLowerCase();
-			return status === "limited" || status === "exceeded";
-		};
+			const formatEffectiveRetryTitle = (iso, explanation) => {
+				const title = formatDateTimeTitle(iso);
+				if (!title) {
+					return explanation || "";
+				}
+				if (!explanation) {
+					return title;
+				}
+				return `${title} — ${explanation}`;
+			};
 
 		const buildUsageWindowTitle = (key, minutes) =>
 			`Remaining quota by account (${formatWindowLabel(key, minutes)})`;
@@ -1072,26 +1070,26 @@
 			})
 			.filter(Boolean);
 
-		const metrics = state.dashboardData.metrics;
-			const stats = [
-				{
-					title: `Tokens (${formatWindowLabel("secondary", secondaryWindowMinutes)})`,
-					value: formatCompactNumber(metrics.tokensSecondaryWindow),
+			const metrics = state.dashboardData.metrics;
+				const stats = [
+					{
+						title: `Tokens (${formatWindowLabel("secondary", secondaryWindowMinutes)})`,
+						value: formatCompactNumber(metrics.tokensSecondaryWindow),
 				meta: formatCachedTokensMeta(
 					metrics.tokensSecondaryWindow,
 						metrics.cachedTokensSecondaryWindow,
 					),
 				},
+						{
+							title: "Cost (7d)",
+							value: formatCurrency(metrics.cost7d),
+							meta: `Avg per hour: ${formatCurrency(
+							avgPerHour(metrics.cost7d, secondaryWindowMinutes),
+						)}`,
+					},
 					{
-						title: "Cost (7d)",
-						value: formatCurrency(metrics.cost7d),
-						meta: `Avg per hour: ${formatCurrency(
-						avgPerHour(metrics.cost7d, secondaryWindowMinutes),
-					)}`,
-				},
-				{
-					title: "Active accounts",
-					value: `${statusCounts.active || 0} / ${accounts.length}`,
+						title: "Active accounts",
+						value: `${statusCounts.active || 0} / ${accounts.length}`,
 					meta: `Routing: ${routingLabel(state.dashboardData.routing?.strategy)}`,
 				},
 			{
@@ -3104,15 +3102,14 @@
 			formatWindowLabel,
 			formatPercentValue,
 			formatRate,
-				formatTimeLong,
-				formatDateTimeTitle,
-				formatCountdown,
-				shouldShowBlockedMeta,
-				formatQuotaResetLabel,
-				formatBlockedUntilLabel,
-				formatAccessTokenLabel,
-				formatRefreshTokenLabel,
-				formatAccessTokenLabel,
+					formatTimeLong,
+					formatDateTimeTitle,
+					formatEffectiveRetryTitle,
+					formatCountdown,
+					formatQuotaResetLabel,
+					formatAccessTokenLabel,
+					formatRefreshTokenLabel,
+					formatAccessTokenLabel,
 				formatRefreshTokenLabel,
 			formatIdTokenLabel,
 			theme: (() => {

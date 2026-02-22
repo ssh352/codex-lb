@@ -97,15 +97,15 @@
             </div>
           </div>
 
-          <div class="section-grid" style="margin-top: 12px">
-            <template x-for="stat in dashboard.stats" :key="stat.title">
-              <div class="panel">
-                <h3 x-text="stat.title"></h3>
-                <div class="stat-value" x-text="stat.value"></div>
-                <div class="stat-meta" x-text="stat.meta"></div>
-              </div>
-            </template>
-          </div>
+	          <div class="section-grid" style="margin-top: 12px">
+	            <template x-for="stat in dashboard.stats" :key="stat.title">
+	              <div class="panel">
+	                <h3 x-text="stat.title"></h3>
+	                <div class="stat-value" x-text="stat.value"></div>
+	                <div class="stat-meta" x-text="stat.meta"></div>
+	              </div>
+	            </template>
+	          </div>
 
           <div class="two-column two-column--equal" style="margin-top: 12px">
             <template x-for="donut in dashboard.donuts" :key="donut.title">
@@ -510,11 +510,11 @@
 
 	            <div class="panel">
 	              <h3>Selected account</h3>
-	              <div class="summary-list">
-	                <div><span>Email</span><strong x-text="selectedAccount.email" :title="selectedAccount.email"></strong>
-	                </div>
-	                <div><span>Account ID</span><strong x-text="selectedAccount.id" :title="selectedAccount.id"></strong>
-	                </div>
+		              <div class="summary-list">
+		                <div><span>Email</span><strong x-text="selectedAccount.email" :title="selectedAccount.email"></strong>
+		                </div>
+		                <div><span>Account ID</span><strong x-text="selectedAccount.id" :title="selectedAccount.id"></strong>
+		                </div>
 	                <div>
 	                  <span>Plan</span>
 	                  <strong>
@@ -523,27 +523,38 @@
 	                    </span>
 	                  </strong>
 	                </div>
-	                <div>
-	                  <span>Status</span>
-	                  <span class="status-pill" :class="selectedAccount.status"
-	                    x-text="statusLabel(selectedAccount.status)"></span>
-	                </div>
-	                  <template x-if="shouldShowBlockedMeta(selectedAccount)">
-	                    <div>
-	                      <span>Blocked until</span>
-	                      <strong :title="formatDateTimeTitle(selectedAccount.statusResetAt)"
-	                        x-text="formatBlockedUntilLabel(selectedAccount.statusResetAt)"></strong>
-	                    </div>
-	                  </template>
-	                <template x-if="selectedAccount.plan !== 'free'">
-	                  <div><span
-	                      x-text="`Rate limit reset (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></span><strong
-	                      x-text="formatQuotaResetLabel(selectedAccount.resetAtPrimary)"></strong></div>
-	                </template>
-	                <div><span
-	                    x-text="`Quota reset (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`"></span><strong
-	                    x-text="formatQuotaResetLabel(selectedAccount.resetAtSecondary)"></strong></div>
-	              </div>
+		                <div>
+		                  <span>Status</span>
+		                  <span class="status-pill" :class="selectedAccount.status"
+		                    x-text="statusLabel(selectedAccount.status)"></span>
+		                </div>
+		                <template x-if="selectedAccount.plan !== 'free' || (selectedAccount.status === 'limited' && selectedAccount.statusResetAt)">
+		                  <div><span
+		                      x-text="selectedAccount.status === 'limited' && selectedAccount.statusResetAt
+		                        ? `Retry at (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`
+		                        : `Rate limit reset (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></span><strong
+		                      :title="selectedAccount.status === 'limited' && selectedAccount.statusResetAt
+		                        ? formatEffectiveRetryTitle(selectedAccount.statusResetAt, 'Effective retry time for routing (max of persisted block hint and primary window reset).')
+		                        : formatDateTimeTitle(selectedAccount.resetAtPrimary)"
+		                      x-text="formatQuotaResetLabel(
+		                        selectedAccount.status === 'limited' && selectedAccount.statusResetAt
+		                          ? selectedAccount.statusResetAt
+		                          : selectedAccount.resetAtPrimary
+		                      )"></strong></div>
+		                </template>
+		                <div><span
+		                    x-text="selectedAccount.status === 'exceeded' && selectedAccount.statusResetAt
+		                      ? `Retry at (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`
+		                      : `Quota reset (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`"></span><strong
+		                    :title="selectedAccount.status === 'exceeded' && selectedAccount.statusResetAt
+		                      ? formatEffectiveRetryTitle(selectedAccount.statusResetAt, 'Effective retry time for routing (max of persisted block hint and secondary window reset).')
+		                      : formatDateTimeTitle(selectedAccount.resetAtSecondary)"
+		                    x-text="formatQuotaResetLabel(
+		                      selectedAccount.status === 'exceeded' && selectedAccount.statusResetAt
+		                        ? selectedAccount.statusResetAt
+		                        : selectedAccount.resetAtSecondary
+		                    )"></strong></div>
+		              </div>
 
 	              <div class="split-stack" style="margin-top: 12px">
 	                <template x-if="selectedAccount.plan !== 'free'">
