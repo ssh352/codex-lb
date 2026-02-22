@@ -54,6 +54,16 @@ class DebugLbStateResponse(BaseModel):
     accounts: list[DebugLbAccountRow]
 
 
+class DebugTierScore(BaseModel):
+    tier: str
+    urgency: float
+    weight: float
+    score: float
+    min_reset_at: datetime | None
+    remaining_credits: float
+    account_count: int
+
+
 class DebugLbSelectionEvent(BaseModel):
     ts: datetime
     request_id: str | None
@@ -65,6 +75,11 @@ class DebugLbSelectionEvent(BaseModel):
     selected: DebugAccountRef | None
     error_message: str | None
     fallback_from_pinned: bool
+    selected_tier: str | None
+    tier_scores: list[DebugTierScore]
+    selected_secondary_reset_at: datetime | None
+    selected_secondary_used_percent: float | None
+    selected_primary_used_percent: float | None
 
 
 class DebugLbEventsResponse(BaseModel):

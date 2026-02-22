@@ -105,6 +105,11 @@ When suppressed, the server MUST NOT emit any of:
   - `sticky_backend` is one of: `db`, `memory`, `none`
   - `reallocate_sticky` is one of: `true`, `false`
   - `outcome` is one of: `selected`, `paused`, `auth`, `paused_or_auth`, `quota_exceeded`, `rate_limited`, `cooldown`, `no_available`, `unknown`
+- `codex_lb_lb_selected_tier_total{pool,sticky_backend,reallocate_sticky,tier}` where:
+  - `tier` is the selected normalized tier (`pro`, `plus`, `free`, or `unknown`)
+  - the counter increments only when `codex_lb_lb_select_total` outcome is `selected`
+- `codex_lb_lb_tier_score_bucket{pool,sticky_backend,reallocate_sticky,tier,le}` (+ `_sum`, `_count`) where:
+  - each observation is the non-negative finite selector score for one evaluated tier in a selection attempt
 - `codex_lb_lb_mark_total{event,account_id}` where `event` is one of: `rate_limit`, `quota_exceeded`, `permanent_failure`, `error`
 - `codex_lb_lb_mark_permanent_failure_total{code}`
 - `codex_lb_lb_snapshot_refresh_total`

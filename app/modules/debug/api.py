@@ -13,6 +13,7 @@ from app.modules.debug.schemas import (
     DebugLbEventsResponse,
     DebugLbSelectionEvent,
     DebugLbStateResponse,
+    DebugTierScore,
     DebugUsageSnapshot,
 )
 
@@ -142,6 +143,22 @@ async def debug_lb_events(
                 selected=selected_ref,
                 error_message=ev.error_message,
                 fallback_from_pinned=ev.fallback_from_pinned,
+                selected_tier=ev.selected_tier,
+                tier_scores=[
+                    DebugTierScore(
+                        tier=score.tier,
+                        urgency=score.urgency,
+                        weight=score.weight,
+                        score=score.score,
+                        min_reset_at=_dt_from_epoch(score.min_reset_at),
+                        remaining_credits=score.remaining_credits,
+                        account_count=score.account_count,
+                    )
+                    for score in ev.tier_scores
+                ],
+                selected_secondary_reset_at=_dt_from_epoch(ev.selected_secondary_reset_at),
+                selected_secondary_used_percent=ev.selected_secondary_used_percent,
+                selected_primary_used_percent=ev.selected_primary_used_percent,
             )
         )
 

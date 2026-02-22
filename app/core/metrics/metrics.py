@@ -195,6 +195,19 @@ class Metrics:
             labelnames=("pool", "sticky_backend", "reallocate_sticky", "outcome"),
             registry=self._registry,
         )
+        self._lb_selected_tier_total = Counter(
+            "codex_lb_lb_selected_tier_total",
+            "Load balancer selected tier counts for successful selections.",
+            labelnames=("pool", "sticky_backend", "reallocate_sticky", "tier"),
+            registry=self._registry,
+        )
+        self._lb_tier_score = Histogram(
+            "codex_lb_lb_tier_score",
+            "Load balancer per-tier score values observed during selection.",
+            labelnames=("pool", "sticky_backend", "reallocate_sticky", "tier"),
+            buckets=(0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100),
+            registry=self._registry,
+        )
         self._lb_mark_total = Counter(
             "codex_lb_lb_mark_total",
             "Load balancer mark events by account.",
@@ -388,6 +401,34 @@ class Metrics:
             reallocate_sticky="true" if reallocate_sticky else "false",
             outcome=outcome or "unknown",
         ).inc()
+
+    def observe_lb_tier_decision(
+        self,
+        *,
+        pool: str,
+        sticky_backend: str,
+        reallocate_sticky: bool,
+        outcome: str,
+        selected_tier: str | None,
+        tier_scores: Sequence[tuple[str, float]],
+    ) -> None:
+        labels = {
+            "pool": pool or "unknown",
+            "sticky_backend": sticky_backend or "unknown",
+            "reallocate_sticky": "true" if reallocate_sticky else "false",
+        }
+        if outcome == "selected":
+            self._lb_selected_tier_total.labels(
+                **labels,
+                tier=selected_tier or "unknown",
+            ).inc()
+        for tier, score in tier_scores:
+            if not math.isfinite(score):
+                continue
+            self._lb_tier_score.labels(
+                **labels,
+                tier=tier or "unknown",
+            ).observe(max(0.0, float(score)))
 
     def observe_lb_mark(self, *, event: str, account_id: str) -> None:
         self._lb_mark_total.labels(event=event or "unknown", account_id=account_id or "unknown").inc()

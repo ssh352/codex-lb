@@ -262,6 +262,14 @@ def test_metrics_observes_load_balancer_events() -> None:
         reallocate_sticky=False,
         outcome="selected",
     )
+    metrics.observe_lb_tier_decision(
+        pool="full",
+        sticky_backend="memory",
+        reallocate_sticky=False,
+        outcome="selected",
+        selected_tier="plus",
+        tier_scores=(("plus", 1.5), ("free", 1.0)),
+    )
     metrics.observe_lb_mark(event="rate_limit", account_id="acc_test")
     metrics.observe_lb_permanent_failure(code="refresh_token_expired")
     metrics.observe_lb_snapshot_refresh(updated_at_seconds=1_700_000_000.0)
@@ -298,3 +306,29 @@ def test_metrics_observes_load_balancer_events() -> None:
     )
     assert _sample_value(rendered, "codex_lb_lb_snapshot_refresh_total") == 1.0
     assert _sample_value(rendered, "codex_lb_lb_snapshot_updated_at_seconds") == 1_700_000_000.0
+    assert (
+        _sample_value(
+            rendered,
+            "codex_lb_lb_selected_tier_total",
+            {
+                "pool": "full",
+                "sticky_backend": "memory",
+                "reallocate_sticky": "false",
+                "tier": "plus",
+            },
+        )
+        == 1.0
+    )
+    assert (
+        _sample_value(
+            rendered,
+            "codex_lb_lb_tier_score_count",
+            {
+                "pool": "full",
+                "sticky_backend": "memory",
+                "reallocate_sticky": "false",
+                "tier": "plus",
+            },
+        )
+        == 1.0
+    )

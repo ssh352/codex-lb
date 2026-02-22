@@ -26,124 +26,96 @@ def test_select_account_picks_lowest_used_percent():
     assert result.account.account_id == "b"
 
 
-def test_select_account_waste_pressure_prefers_high_capacity_near_reset():
+def test_select_account_within_tier_uses_strict_earliest_secondary_reset():
     now = 1_700_000_000.0
     states = [
         AccountState(
-            "free",
+            "earlier",
             AccountStatus.ACTIVE,
-            used_percent=0.0,
-            secondary_used_percent=0.0,
-            secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=100.0,
+            plan_type="free",
+            secondary_used_percent=99.0,
+            secondary_reset_at=int(now + 600),
+            secondary_capacity_credits=1000.0,
         ),
         AccountState(
-            "pro",
+            "later",
             AccountStatus.ACTIVE,
-            used_percent=10.0,
+            plan_type="free",
             secondary_used_percent=0.0,
             secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=60480.0,
+            secondary_capacity_credits=1000.0,
         ),
     ]
     result = select_account(states, now=now)
     assert result.account is not None
-    assert result.account.account_id == "pro"
+    assert result.account.account_id == "earlier"
 
 
-def test_select_account_waste_pressure_penalizes_low_primary_headroom():
+def test_select_account_cross_tier_prefers_weighted_urgency():
     now = 1_700_000_000.0
     states = [
         AccountState(
-            "free",
+            "free_early",
             AccountStatus.ACTIVE,
-            used_percent=0.0,
-            secondary_used_percent=0.0,
-            secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=100.0,
-        ),
-        AccountState(
-            "pro",
-            AccountStatus.ACTIVE,
-            used_percent=99.0,
-            secondary_used_percent=0.0,
-            secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=60480.0,
-        ),
-    ]
-    result = select_account(states, now=now)
-    assert result.account is not None
-    assert result.account.account_id == "free"
-
-
-def test_select_account_waste_pressure_tiebreaks_by_usage_key():
-    now = 1_700_000_000.0
-    # Keep remaining credits equal to force score tie:
-    # - 1000 @ 50% => 500 remaining
-    # - 500 @ 0% => 500 remaining
-    states = [
-        AccountState(
-            "a",
-            AccountStatus.ACTIVE,
-            used_percent=0.0,
-            secondary_used_percent=50.0,
+            plan_type="free",
+            secondary_used_percent=99.0,
             secondary_reset_at=int(now + 3600),
             secondary_capacity_credits=1000.0,
         ),
         AccountState(
-            "b",
+            "plus_later",
             AccountStatus.ACTIVE,
-            used_percent=0.0,
+            plan_type="plus",
             secondary_used_percent=0.0,
-            secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=500.0,
+            secondary_reset_at=int(now + 7200),
+            secondary_capacity_credits=1000.0,
         ),
     ]
     result = select_account(states, now=now)
     assert result.account is not None
-    assert result.account.account_id == "b"
+    assert result.account.account_id == "plus_later"
 
 
-def test_select_account_waste_pressure_prefers_known_reset_over_unknown_reset():
+def test_select_account_cross_tier_applies_latency_weight_on_close_urgency():
     now = 1_700_000_000.0
     states = [
         AccountState(
-            "unknown",
+            "plus_candidate",
             AccountStatus.ACTIVE,
-            used_percent=0.0,
+            plan_type="plus",
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=1000.0,
+        ),
+        AccountState(
+            "pro_candidate",
+            AccountStatus.ACTIVE,
+            plan_type="pro",
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=1000.0,
+        ),
+    ]
+    result = select_account(states, now=now)
+    assert result.account is not None
+    assert result.account.account_id == "pro_candidate"
+
+
+def test_select_account_prefers_known_reset_inside_selected_tier():
+    now = 1_700_000_000.0
+    states = [
+        AccountState(
+            "unknown_reset",
+            AccountStatus.ACTIVE,
+            plan_type="plus",
             secondary_used_percent=0.0,
             secondary_reset_at=None,
-            secondary_capacity_credits=100.0,
-        ),
-        AccountState(
-            "known",
-            AccountStatus.ACTIVE,
-            used_percent=0.0,
-            secondary_used_percent=0.0,
-            secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=100.0,
-        ),
-    ]
-    result = select_account(states, now=now)
-    assert result.account is not None
-    assert result.account.account_id == "known"
-
-
-def test_select_account_waste_pressure_approximates_missing_secondary_used_with_primary_used():
-    now = 1_700_000_000.0
-    states = [
-        AccountState(
-            "missing_secondary",
-            AccountStatus.ACTIVE,
-            used_percent=80.0,
-            secondary_used_percent=None,
-            secondary_reset_at=int(now + 3600),
             secondary_capacity_credits=1000.0,
         ),
         AccountState(
-            "known_secondary",
+            "known_reset",
             AccountStatus.ACTIVE,
-            used_percent=0.0,
+            plan_type="plus",
             secondary_used_percent=0.0,
             secondary_reset_at=int(now + 3600),
             secondary_capacity_credits=1000.0,
@@ -151,57 +123,61 @@ def test_select_account_waste_pressure_approximates_missing_secondary_used_with_
     ]
     result = select_account(states, now=now)
     assert result.account is not None
-    assert result.account.account_id == "known_secondary"
+    assert result.account.account_id == "known_reset"
 
 
-def test_select_account_waste_pressure_ignores_unknown_reset_even_if_high_capacity():
+def test_select_account_falls_back_to_usage_sort_when_all_tier_scores_unknown():
     now = 1_700_000_000.0
     states = [
         AccountState(
-            "unknown_pro",
+            "higher_used",
             AccountStatus.ACTIVE,
-            used_percent=0.0,
-            secondary_used_percent=None,
+            plan_type="plus",
+            used_percent=70.0,
+            secondary_used_percent=70.0,
             secondary_reset_at=None,
-            secondary_capacity_credits=60480.0,
-        ),
-        AccountState(
-            "known_free",
-            AccountStatus.ACTIVE,
-            used_percent=0.0,
-            secondary_used_percent=0.0,
-            secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=100.0,
-        ),
-    ]
-    result = select_account(states, now=now)
-    assert result.account is not None
-    assert result.account.account_id == "known_free"
-
-
-def test_select_account_waste_pressure_ignores_unknown_capacity_when_competing():
-    now = 1_700_000_000.0
-    states = [
-        AccountState(
-            "unknown_capacity",
-            AccountStatus.ACTIVE,
-            used_percent=0.0,
-            secondary_used_percent=0.0,
-            secondary_reset_at=int(now + 3600),
             secondary_capacity_credits=None,
         ),
         AccountState(
-            "known_capacity",
+            "lower_used",
             AccountStatus.ACTIVE,
-            used_percent=0.0,
-            secondary_used_percent=0.0,
-            secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=100.0,
+            plan_type="free",
+            used_percent=10.0,
+            secondary_used_percent=10.0,
+            secondary_reset_at=None,
+            secondary_capacity_credits=None,
         ),
     ]
     result = select_account(states, now=now)
     assert result.account is not None
-    assert result.account.account_id == "known_capacity"
+    assert result.account.account_id == "lower_used"
+
+
+def test_select_account_emits_tier_trace_fields():
+    now = 1_700_000_000.0
+    states = [
+        AccountState(
+            "free_1",
+            AccountStatus.ACTIVE,
+            plan_type="free",
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 600),
+            secondary_capacity_credits=1000.0,
+        ),
+        AccountState(
+            "plus_1",
+            AccountStatus.ACTIVE,
+            plan_type="plus",
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=1000.0,
+        ),
+    ]
+    result = select_account(states, now=now)
+    assert result.account is not None
+    assert result.trace is not None
+    assert result.trace.selected_tier in {"free", "plus", "pro"}
+    assert result.trace.tier_scores
 
 
 def test_select_account_skips_rate_limited_until_reset():

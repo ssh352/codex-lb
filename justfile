@@ -6,6 +6,7 @@ test:
 # Short aliases.
 t: test
 ci: check
+or: observability-restart
 
 lint:
     uv run --group dev ruff check .
@@ -29,6 +30,9 @@ fe-unit:
     uv run --group dev pytest tests/unit/test_frontend_selection_utils.py tests/unit/test_frontend_sort_utils.py tests/unit/test_frontend_state_defaults.py tests/unit/test_frontend_ui_utils.py
 
 fe-check: fe-syntax fe-assets
+
+observability-restart:
+    docker-compose -f docker-compose.observability.yml restart prometheus grafana
 
 # macOS launchd helpers (no Docker).
 #

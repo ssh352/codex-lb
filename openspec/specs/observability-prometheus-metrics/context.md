@@ -154,6 +154,10 @@ and use a 1-day query step (Grafana “Min step” / `interval=1d`) so evaluatio
 
 - Selection outcomes/sec (stacked):
   - `sum by (pool, outcome) (rate(codex_lb_lb_select_total[5m]))`
+- Selected tier share/sec:
+  - `sum by (tier) (rate(codex_lb_lb_selected_tier_total[5m]))`
+- Tier score p95 (per tier):
+  - `histogram_quantile(0.95, sum by (le, tier) (rate(codex_lb_lb_tier_score_bucket[5m])))`
 - Mark events/sec:
   - `sum by (event) (rate(codex_lb_lb_mark_total[5m]))`
 - Permanent failures by code:

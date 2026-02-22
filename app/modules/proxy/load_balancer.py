@@ -60,6 +60,22 @@ class LoadBalancerSelectionEvent:
     selected_account_id: str | None
     error_message: str | None
     fallback_from_pinned: bool
+    selected_tier: str | None
+    tier_scores: tuple[LoadBalancerTierScore, ...]
+    selected_secondary_reset_at: int | None
+    selected_secondary_used_percent: float | None
+    selected_primary_used_percent: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class LoadBalancerTierScore:
+    tier: str
+    urgency: float
+    weight: float
+    score: float
+    min_reset_at: int | None
+    remaining_credits: float
+    account_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +156,63 @@ class LoadBalancer:
             return []
         items = list(self._debug_events)
         return list(reversed(items[-capped:]))
+
+    def _append_debug_event(
+        self,
+        *,
+        pool: str,
+        sticky_backend: str,
+        reallocate_sticky: bool,
+        result: SelectionResult,
+        fallback_from_pinned: bool,
+    ) -> None:
+        trace = result.trace
+        score_tuples: tuple[tuple[str, float], ...] = (
+            tuple((score.tier, score.score) for score in trace.tier_scores) if trace is not None else tuple()
+        )
+        get_metrics().observe_lb_tier_decision(
+            pool=pool,
+            sticky_backend=sticky_backend,
+            reallocate_sticky=reallocate_sticky,
+            outcome=_selection_outcome(result),
+            selected_tier=trace.selected_tier if trace is not None else None,
+            tier_scores=score_tuples,
+        )
+        tier_scores = (
+            tuple(
+                LoadBalancerTierScore(
+                    tier=score.tier,
+                    urgency=score.urgency,
+                    weight=score.weight,
+                    score=score.score,
+                    min_reset_at=score.min_reset_at,
+                    remaining_credits=score.remaining_credits,
+                    account_count=score.account_count,
+                )
+                for score in trace.tier_scores
+            )
+            if trace is not None
+            else tuple()
+        )
+        self._debug_events.append(
+            LoadBalancerSelectionEvent(
+                ts_epoch=time.time(),
+                request_id=get_request_id(),
+                pool=pool,
+                sticky_backend=sticky_backend,
+                reallocate_sticky=reallocate_sticky,
+                outcome=_selection_outcome(result),
+                reason_code=result.reason_code,
+                selected_account_id=result.account.account_id if result.account is not None else None,
+                error_message=result.error_message,
+                fallback_from_pinned=fallback_from_pinned,
+                selected_tier=trace.selected_tier if trace is not None else None,
+                tier_scores=tier_scores,
+                selected_secondary_reset_at=trace.selected_secondary_reset_at if trace is not None else None,
+                selected_secondary_used_percent=trace.selected_secondary_used_percent if trace is not None else None,
+                selected_primary_used_percent=trace.selected_primary_used_percent if trace is not None else None,
+            )
+        )
 
     async def debug_dump(self) -> LoadBalancerDebugDump:
         await self._maybe_invalidate_snapshot_on_pinned_change()
@@ -246,9 +319,9 @@ class LoadBalancer:
         # - If the pinned pool yields no eligible accounts (e.g. all paused/deactivated/limited), routing
         #   falls back to selecting from the full account set.
         #
-        # Waste-pressure influences *which* account is chosen when a sticky key is first assigned (or
-        # explicitly reallocated), but stickiness does not proactively migrate just because some other
-        # account later becomes a "better" waste-pressure candidate.
+        # Tier-aware scoring influences *which* account is chosen when a sticky key is first assigned
+        # (or explicitly reallocated), but stickiness does not proactively migrate just because some
+        # other account later becomes a "better" selector candidate.
         pinned_active = bool(snapshot.pinned_account_ids)
         pinned_states = (
             [state for state in snapshot.states if state.account_id in snapshot.pinned_account_ids]
@@ -279,19 +352,12 @@ class LoadBalancer:
                     reallocate_sticky=reallocate_sticky,
                     outcome=_selection_outcome(result),
                 )
-                self._debug_events.append(
-                    LoadBalancerSelectionEvent(
-                        ts_epoch=time.time(),
-                        request_id=get_request_id(),
-                        pool="pinned" if pinned_active else "full",
-                        sticky_backend=sticky_backend,
-                        reallocate_sticky=reallocate_sticky,
-                        outcome=_selection_outcome(result),
-                        reason_code=result.reason_code,
-                        selected_account_id=result.account.account_id if result.account is not None else None,
-                        error_message=result.error_message,
-                        fallback_from_pinned=False,
-                    )
+                self._append_debug_event(
+                    pool="pinned" if pinned_active else "full",
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                    result=result,
+                    fallback_from_pinned=False,
                 )
                 if pinned_active and result.account is None:
                     pinned_result = result
@@ -308,19 +374,12 @@ class LoadBalancer:
                         reallocate_sticky=reallocate_sticky,
                         outcome=_selection_outcome(result),
                     )
-                    self._debug_events.append(
-                        LoadBalancerSelectionEvent(
-                            ts_epoch=time.time(),
-                            request_id=get_request_id(),
-                            pool="full",
-                            sticky_backend=sticky_backend,
-                            reallocate_sticky=reallocate_sticky,
-                            outcome=_selection_outcome(result),
-                            reason_code=result.reason_code,
-                            selected_account_id=result.account.account_id if result.account is not None else None,
-                            error_message=result.error_message,
-                            fallback_from_pinned=True,
-                        )
+                    self._append_debug_event(
+                        pool="full",
+                        sticky_backend=sticky_backend,
+                        reallocate_sticky=reallocate_sticky,
+                        result=result,
+                        fallback_from_pinned=True,
                     )
                     self._maybe_log_pinned_fallback(
                         pinned_states=pinned_states,
@@ -343,19 +402,12 @@ class LoadBalancer:
                 reallocate_sticky=reallocate_sticky,
                 outcome=_selection_outcome(result),
             )
-            self._debug_events.append(
-                LoadBalancerSelectionEvent(
-                    ts_epoch=time.time(),
-                    request_id=get_request_id(),
-                    pool="pinned" if pinned_active else "full",
-                    sticky_backend=sticky_backend,
-                    reallocate_sticky=reallocate_sticky,
-                    outcome=_selection_outcome(result),
-                    reason_code=result.reason_code,
-                    selected_account_id=result.account.account_id if result.account is not None else None,
-                    error_message=result.error_message,
-                    fallback_from_pinned=False,
-                )
+            self._append_debug_event(
+                pool="pinned" if pinned_active else "full",
+                sticky_backend=sticky_backend,
+                reallocate_sticky=reallocate_sticky,
+                result=result,
+                fallback_from_pinned=False,
             )
             if pinned_active and result.account is None:
                 pinned_result = result
@@ -371,19 +423,12 @@ class LoadBalancer:
                     reallocate_sticky=reallocate_sticky,
                     outcome=_selection_outcome(result),
                 )
-                self._debug_events.append(
-                    LoadBalancerSelectionEvent(
-                        ts_epoch=time.time(),
-                        request_id=get_request_id(),
-                        pool="full",
-                        sticky_backend=sticky_backend,
-                        reallocate_sticky=reallocate_sticky,
-                        outcome=_selection_outcome(result),
-                        reason_code=result.reason_code,
-                        selected_account_id=result.account.account_id if result.account is not None else None,
-                        error_message=result.error_message,
-                        fallback_from_pinned=True,
-                    )
+                self._append_debug_event(
+                    pool="full",
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                    result=result,
+                    fallback_from_pinned=True,
                 )
                 self._maybe_log_pinned_fallback(
                     pinned_states=pinned_states,
@@ -401,19 +446,12 @@ class LoadBalancer:
                 reallocate_sticky=reallocate_sticky,
                 outcome=_selection_outcome(result),
             )
-            self._debug_events.append(
-                LoadBalancerSelectionEvent(
-                    ts_epoch=time.time(),
-                    request_id=get_request_id(),
-                    pool="pinned" if pinned_active else "full",
-                    sticky_backend=sticky_backend,
-                    reallocate_sticky=reallocate_sticky,
-                    outcome=_selection_outcome(result),
-                    reason_code=result.reason_code,
-                    selected_account_id=result.account.account_id if result.account is not None else None,
-                    error_message=result.error_message,
-                    fallback_from_pinned=False,
-                )
+            self._append_debug_event(
+                pool="pinned" if pinned_active else "full",
+                sticky_backend=sticky_backend,
+                reallocate_sticky=reallocate_sticky,
+                result=result,
+                fallback_from_pinned=False,
             )
             if pinned_active and result.account is None:
                 pinned_result = result
@@ -424,19 +462,12 @@ class LoadBalancer:
                     reallocate_sticky=reallocate_sticky,
                     outcome=_selection_outcome(result),
                 )
-                self._debug_events.append(
-                    LoadBalancerSelectionEvent(
-                        ts_epoch=time.time(),
-                        request_id=get_request_id(),
-                        pool="full",
-                        sticky_backend=sticky_backend,
-                        reallocate_sticky=reallocate_sticky,
-                        outcome=_selection_outcome(result),
-                        reason_code=result.reason_code,
-                        selected_account_id=result.account.account_id if result.account is not None else None,
-                        error_message=result.error_message,
-                        fallback_from_pinned=True,
-                    )
+                self._append_debug_event(
+                    pool="full",
+                    sticky_backend=sticky_backend,
+                    reallocate_sticky=reallocate_sticky,
+                    result=result,
+                    fallback_from_pinned=True,
                 )
 
                 self._maybe_log_pinned_fallback(
@@ -646,8 +677,8 @@ class LoadBalancer:
                 # Stickiness is honored as long as the pinned account remains eligible.
                 # Note: we do not proactively reassign on secondary reset boundaries; reassignment
                 # typically happens on retry (explicit reallocation) or when the pinned account
-                # becomes unavailable/ineligible. In particular, we do not reassign just because
-                # waste-pressure scoring would prefer a different account.
+                # becomes unavailable/ineligible. In particular, we do not reassign just because the
+                # selector score would prefer a different account.
                 pinned_result = select_account([pinned])
                 if pinned_result.account is not None:
                     return pinned_result
@@ -680,8 +711,8 @@ class LoadBalancer:
                 # Stickiness is honored as long as the pinned account remains eligible.
                 # Note: we do not proactively reassign on secondary reset boundaries; reassignment
                 # typically happens on retry (explicit reallocation) or when the pinned account
-                # becomes unavailable/ineligible. In particular, we do not reassign just because
-                # waste-pressure scoring would prefer a different account.
+                # becomes unavailable/ineligible. In particular, we do not reassign just because the
+                # selector score would prefer a different account.
                 pinned_result = select_account([pinned])
                 if pinned_result.account is not None:
                     return pinned_result
@@ -772,6 +803,7 @@ class LoadBalancer:
         return AccountState(
             account_id=account.id,
             status=account.status,
+            plan_type=account.plan_type,
             used_percent=None,
             reset_at=reset_at,
             cooldown_until=runtime.cooldown_until,
@@ -918,6 +950,7 @@ def _state_from_account(
     return AccountState(
         account_id=account.id,
         status=status,
+        plan_type=account.plan_type,
         used_percent=used_percent,
         reset_at=reset_at,
         cooldown_until=runtime.cooldown_until,

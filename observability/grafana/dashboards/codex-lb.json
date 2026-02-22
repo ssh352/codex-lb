@@ -212,11 +212,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000"
+          "expr": "histogram_quantile(0.5, sum by (model, le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000",
+          "legendFormat": "p50 {{model}}"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000"
+          "expr": "histogram_quantile(0.95, sum by (model, le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000",
+          "legendFormat": "p95 {{model}}"
         }
       ],
       "fieldConfig": {
