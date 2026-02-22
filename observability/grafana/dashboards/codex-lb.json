@@ -332,15 +332,16 @@
         }
       ]
     },
-	    {
-	      "id": 19,
-	      "type": "timeseries",
-	      "title": "Routing: mark events/min",
-      "gridPos": {
-        "x": 0,
-        "y": 52,
-        "w": 12,
-        "h": 7
+		    {
+		      "id": 19,
+		      "type": "timeseries",
+		      "title": "Routing: mark events/min",
+		      "description": "How often the load balancer marks accounts due to upstream signals. This panel plots sum by (event) of rate(codex_lb_lb_mark_total{event,account_id}) and converts to per-minute. event: rate_limit (includes usage_limit_reached), quota_exceeded, permanent_failure, error. Spikes typically correlate with more accounts becoming temporarily/unavailable or being deactivated.",
+	      "gridPos": {
+	        "x": 0,
+	        "y": 52,
+	        "w": 12,
+	        "h": 7
       },
       "targets": [
         {

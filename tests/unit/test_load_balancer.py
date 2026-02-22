@@ -236,7 +236,7 @@ def test_handle_rate_limit_uses_backoff_when_no_delay(monkeypatch):
     assert state.cooldown_until == pytest.approx(now + 0.2)
 
 
-def test_handle_usage_limit_reached_persists_rate_limit_when_reset_is_far(monkeypatch):
+def test_handle_usage_limit_reached_caps_first_long_reset(monkeypatch):
     now = 1_700_000_000.0
     reset_at = int(now + 3600)
     monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
@@ -250,9 +250,28 @@ def test_handle_usage_limit_reached_persists_rate_limit_when_reset_is_far(monkey
         },
     )
     assert state.status == AccountStatus.RATE_LIMITED
+    assert state.cooldown_until is not None
+    assert state.cooldown_until == pytest.approx(now + 300.0)
+    assert state.reset_at == pytest.approx(now + 300.0)
+
+
+def test_handle_usage_limit_reached_escalates_after_repeated_errors(monkeypatch):
+    now = 1_700_000_000.0
+    reset_at = int(now + 3600)
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0, error_count=2)
+    handle_usage_limit_reached(
+        state,
+        {
+            "message": "The usage limit has been reached",
+            "resets_at": reset_at,
+            "resets_in_seconds": 3600,
+        },
+    )
+    assert state.status == AccountStatus.RATE_LIMITED
     assert state.reset_at == pytest.approx(float(reset_at))
     assert state.cooldown_until is not None
-    assert state.cooldown_until == pytest.approx(now + 3600.0)
+    assert state.cooldown_until == pytest.approx(now + 300.0)
 
 
 def test_handle_usage_limit_reached_marks_rate_limited_without_reset_hints(monkeypatch):
@@ -281,15 +300,40 @@ def test_handle_usage_limit_reached_marks_rate_limited_for_short_reset(monkeypat
     assert state.reset_at == pytest.approx(now + 30.0)
 
 
+def test_handle_usage_limit_reached_escalates_when_secondary_exhausted(monkeypatch):
+    now = 1_700_000_000.0
+    reset_at = int(now + 3600)
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    state = AccountState(
+        "a",
+        AccountStatus.ACTIVE,
+        used_percent=5.0,
+        secondary_used_percent=100.0,
+        secondary_reset_at=reset_at,
+    )
+    handle_usage_limit_reached(
+        state,
+        {
+            "message": "The usage limit has been reached",
+            "resets_at": reset_at,
+            "resets_in_seconds": 3600,
+        },
+    )
+    assert state.status == AccountStatus.RATE_LIMITED
+    assert state.reset_at == pytest.approx(float(reset_at))
+    assert state.cooldown_until is not None
+    assert state.cooldown_until == pytest.approx(now + 300.0)
+
+
 def test_handle_usage_limit_reached_persists_when_message_has_long_delay(monkeypatch):
     now = 1_700_000_000.0
     monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
     state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
     handle_usage_limit_reached(state, {"message": "The usage limit has been reached. Try again in 3600s"})
     assert state.status == AccountStatus.RATE_LIMITED
-    assert state.reset_at == pytest.approx(now + 3600.0)
+    assert state.reset_at == pytest.approx(now + 300.0)
     assert state.cooldown_until is not None
-    assert state.cooldown_until == pytest.approx(now + 3600.0)
+    assert state.cooldown_until == pytest.approx(now + 300.0)
 
 
 def test_select_account_skips_cooldown_until_expired():

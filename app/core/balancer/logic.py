@@ -17,6 +17,8 @@ PERMANENT_FAILURE_CODES = {
 }
 
 _USAGE_LIMIT_REACHED_PERSIST_THRESHOLD_SECONDS = 5 * 60.0
+_USAGE_LIMIT_REACHED_INITIAL_COOLDOWN_CAP_SECONDS = 5 * 60.0
+_USAGE_LIMIT_REACHED_ESCALATE_AFTER_ERRORS = 3
 
 
 @dataclass
@@ -181,40 +183,84 @@ def handle_usage_limit_reached(state: AccountState, error: UpstreamError) -> Non
     # Policy:
     # - always apply a retry delay (prefer explicit retry hints; otherwise backoff)
     # - mark the account RATE_LIMITED until the computed delay expires
-    # - if upstream provides a stable reset boundary far enough in the future, prefer that
+    # - if upstream provides a stable reset boundary far enough in the future, prefer that *only*
+    #   after we have stronger evidence this is not transient.
+    #
+    # Note: upstream sometimes reports a reset boundary that matches the account's weekly (secondary)
+    # window reset. When we escalate to that boundary, the account's "blocked until" time will line
+    # up with the dashboard's 7d quota reset time. That's expected: it means upstream is effectively
+    # saying "this account is unusable until the secondary window resets".
     state.error_count += 1
     now = time.time()
     state.last_error_at = now
 
     message = error.get("message")
     delay = parse_retry_after(message) if message else None
-    reset_at = _extract_reset_at(error)
+    reset_at_raw = _extract_reset_at(error)
+
+    reset_boundary_epoch: float | None = float(reset_at_raw) if reset_at_raw is not None else None
     if delay is None:
         reset_in = error.get("resets_in_seconds")
         if isinstance(reset_in, (int, float)) and reset_in > 0:
             delay = float(reset_in)
-    if reset_at is not None:
-        delay_to_reset = max(0.0, float(reset_at) - now)
+            if reset_boundary_epoch is None:
+                reset_boundary_epoch = now + float(reset_in)
+
+    delay_to_reset: float | None = None
+    if reset_boundary_epoch is not None:
+        delay_to_reset = max(0.0, float(reset_boundary_epoch) - now)
         delay = max(float(delay or 0.0), delay_to_reset)
+
     if delay is None:
         delay = backoff_seconds(state.error_count)
-    state.cooldown_until = now + delay
 
-    # If upstream provides a real reset boundary far enough in the future, treat it as the
-    # effective reset time. Guard with a small threshold to avoid "temporary"
-    # `usage_limit_reached` blips turning into persistent multi-hour locks when upstream did not
-    # actually provide a meaningful reset.
-    if reset_at is not None and (float(reset_at) - now) >= _USAGE_LIMIT_REACHED_PERSIST_THRESHOLD_SECONDS:
-        state.status = AccountStatus.RATE_LIMITED
-        state.reset_at = float(reset_at)
-        return
-
-    # Otherwise, treat the retry delay as the reset boundary.
-    cooldown_until = state.cooldown_until
-    if cooldown_until is None:
-        return
+    # `usage_limit_reached` often comes with two timing signals:
+    # - a *reset boundary* (`resets_at` / `resets_in_seconds`) indicating when upstream expects the
+    #   account to be usable again, and
+    # - an *effective retry delay* we impose (`cooldown_until`) to back off after errors.
+    #
+    # We keep BOTH `cooldown_until` and `reset_at`:
+    # - `cooldown_until` is a short-term backoff hint (mostly about not hammering upstream).
+    # - `reset_at` is the durable "blocked until" gate used by selection logic and dashboard state.
+    #
+    # Key nuance for `usage_limit_reached`:
+    # - Upstream reset boundaries can be overly conservative (we've observed `usage_limit_reached`
+    #   followed by successful requests well before the reported reset time).
+    # - Therefore, for long reset hints we *initially* persist only a short durable lock
+    #   (`reset_at == cooldown_until`) so the account is retried soon.
+    # - We only escalate `reset_at` to the upstream reset boundary once we have stronger evidence
+    #   this isn't transient (repeated errors in a streak or weekly window exhaustion).
+    #
+    # NOTE: `reset_at` should be meaningful only for blocked statuses (RATE_LIMITED/QUOTA_EXCEEDED);
+    # having `status=ACTIVE` with a non-null `reset_at` is a stale/inconsistent state.
+    #
+    # For debugging, codex-lb currently persists only the normalized error code/message in request
+    # logs (not the full upstream error payload), so relying on the upstream-provided reset hints
+    # at the time of marking is important when we DO escalate.
+    capped_delay = min(float(delay), float(_USAGE_LIMIT_REACHED_INITIAL_COOLDOWN_CAP_SECONDS))
+    state.cooldown_until = now + capped_delay
     state.status = AccountStatus.RATE_LIMITED
-    state.reset_at = float(cooldown_until)
+    if delay_to_reset is None or delay_to_reset < _USAGE_LIMIT_REACHED_PERSIST_THRESHOLD_SECONDS:
+        state.reset_at = float(state.cooldown_until)
+        return
+
+    secondary_exhausted = (
+        state.secondary_used_percent is not None
+        and state.secondary_used_percent >= 100.0
+        and state.secondary_reset_at is not None
+    )
+    repeated_errors = state.error_count >= _USAGE_LIMIT_REACHED_ESCALATE_AFTER_ERRORS
+
+    if secondary_exhausted or repeated_errors:
+        if reset_boundary_epoch is not None:
+            state.reset_at = float(reset_boundary_epoch)
+        else:
+            state.reset_at = float(state.cooldown_until)
+        return
+
+    # First long reset hint: treat as potentially transient. Keep a short durable lock (reset_at ==
+    # cooldown_until) so the account is retried soon, while still backing off for the next attempt.
+    state.reset_at = float(state.cooldown_until)
 
 
 def handle_quota_exceeded(state: AccountState, error: UpstreamError) -> None:

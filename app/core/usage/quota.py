@@ -54,6 +54,12 @@ def apply_usage_quota(
                 status = AccountStatus.ACTIVE
                 reset_at = None
 
+    # `reset_at` is a persisted "blocked until" hint and should only be meaningful for blocked
+    # statuses. Returning a non-null reset timestamp while `status=ACTIVE` creates an inconsistent
+    # state in the accounts DB (and can confuse operators when debugging).
+    if status == AccountStatus.ACTIVE:
+        reset_at = None
+
     return status, used_percent, reset_at
 
 

@@ -117,10 +117,22 @@ class ProxyService:
     ) -> AsyncIterator[str]:
         _maybe_log_proxy_request_payload("stream", payload, headers)
         _maybe_log_proxy_request_shape("stream", payload, headers)
+        # Debug/ops override: force routing a single request to a specific upstream account id.
+        #
+        # Why this exists (pinning is not enough):
+        # - "Pinned accounts" is a routing *pool* preference and can fall back to the full pool when
+        #   the pinned pool is unavailable/ineligible.
+        # - The proxy can also fail over across accounts on retryable upstream errors.
+        #
+        # This header provides deterministic per-request targeting so operators can observe the
+        # *actual* upstream error/behavior from a specific account (e.g. investigate a suspected
+        # `usage_limit_reached`) without failover masking it.
+        forced_account_id = self._optional_header_value(headers, "x-codex-lb-force-account-id")
         filtered = filter_inbound_headers(headers)
         return self._stream_with_retry(
             payload,
             filtered,
+            forced_account_id=forced_account_id,
             propagate_http_errors=propagate_http_errors,
             api=api,
             suppress_text_done_events=suppress_text_done_events,
@@ -133,6 +145,8 @@ class ProxyService:
     ) -> OpenAIResponsePayload:
         _maybe_log_proxy_request_payload("compact", payload, headers)
         _maybe_log_proxy_request_shape("compact", payload, headers)
+        # See `stream_responses()` for rationale. Forced-account requests also disable failover.
+        forced_account_id = self._optional_header_value(headers, "x-codex-lb-force-account-id")
         filtered = filter_inbound_headers(headers)
         request_id = ensure_request_id()
         sticky_key = _sticky_key_from_compact_payload(payload)
@@ -150,7 +164,7 @@ class ProxyService:
         }
         # Fail over across multiple accounts, but keep the bound small to avoid long tail latency
         # when upstream is broadly unavailable/limited across many accounts.
-        max_attempts = 3
+        max_attempts = 1 if forced_account_id else 3
         last_retryable_error: ProxyResponseError | None = None
 
         async def _persist_request_log(
@@ -212,14 +226,26 @@ class ProxyService:
 
         for attempt in range(max_attempts):
             start = time.monotonic()
-            selection = await self._load_balancer.select_account(
-                sticky_key=sticky_key,
-                reallocate_sticky=attempt > 0,
-            )
+            if forced_account_id:
+                selection = await self._load_balancer.select_forced_account(forced_account_id)
+            else:
+                selection = await self._load_balancer.select_account(
+                    sticky_key=sticky_key,
+                    reallocate_sticky=attempt > 0,
+                )
             account = selection.account
             if not account:
                 if last_retryable_error is not None:
                     raise last_retryable_error
+                if forced_account_id:
+                    raise ProxyResponseError(
+                        400,
+                        openai_error(
+                            "invalid_account_id",
+                            selection.error_message or "Invalid forced account id",
+                            error_type="invalid_request_error",
+                        ),
+                    )
                 raise ProxyResponseError(
                     503,
                     openai_error("no_accounts", selection.error_message or "No active accounts available"),
@@ -569,6 +595,7 @@ class ProxyService:
         payload: ResponsesRequest,
         headers: Mapping[str, str],
         *,
+        forced_account_id: str | None,
         propagate_http_errors: bool,
         api: str,
         suppress_text_done_events: bool,
@@ -587,17 +614,29 @@ class ProxyService:
         # Account failover happens inside this loop. When upstream errors are marked retryable and
         # we haven't emitted any SSE output yet, we re-select an account (`reallocate_sticky=True`)
         # and try again. After `max_attempts`, we surface the last upstream HTTP error to the client.
-        max_attempts = 3
+        max_attempts = 1 if forced_account_id else 3
         last_retryable_error: ProxyResponseError | None = None
         for attempt in range(max_attempts):
-            selection = await self._load_balancer.select_account(
-                sticky_key=sticky_key,
-                reallocate_sticky=attempt > 0,
-            )
+            if forced_account_id:
+                selection = await self._load_balancer.select_forced_account(forced_account_id)
+            else:
+                selection = await self._load_balancer.select_account(
+                    sticky_key=sticky_key,
+                    reallocate_sticky=attempt > 0,
+                )
             account = selection.account
             if not account:
                 if propagate_http_errors and last_retryable_error is not None:
                     raise last_retryable_error
+                if forced_account_id:
+                    event = response_failed_event(
+                        "invalid_account_id",
+                        selection.error_message or "Invalid forced account id",
+                        error_type="invalid_request_error",
+                        response_id=request_id,
+                    )
+                    yield format_sse_event(event)
+                    return
                 event = response_failed_event(
                     "no_accounts",
                     selection.error_message or "No active accounts available",
@@ -965,7 +1004,13 @@ class ProxyService:
     async def _handle_stream_error(self, account: Account, error: UpstreamError, code: str) -> None:
         # NOTE: `usage_limit_reached` is not guaranteed to mean "weekly quota is fully exhausted".
         # In practice it can appear transiently (and even be followed by successful requests) while
-        # `/backend-api/wham/usage` still reports <100% used for the secondary window.
+        # `/backend-api/wham/usage` still reports <100% used for the secondary window and the
+        # secondary window reset boundary remains far in the future.
+        #
+        # Implication: do not treat the usage window reset time as a hard "blocked until" gate for
+        # `usage_limit_reached`. Prefer the reset boundary embedded in the upstream error payload
+        # (`resets_at` / `resets_in_seconds`) when available, and keep a separate short-term backoff
+        # mechanism (cooldown) to avoid hammering upstream during error streaks.
         #
         # Operationally, a "fail-open with cooldown/backoff" policy tends to be safer than locking
         # an account out for days on a single `usage_limit_reached`. If upstream *is* truly hard

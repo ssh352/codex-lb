@@ -35,6 +35,8 @@ IGNORE_INBOUND_HEADERS = {
     "forwarded",
     "x-real-ip",
     "true-client-ip",
+    # Internal codex-lb routing controls (never forward to upstream).
+    "x-codex-lb-force-account-id",
 }
 
 _ERROR_TYPE_CODE_MAP = {
@@ -681,6 +683,14 @@ async def stream_responses(
         )
         return
     except aiohttp.ClientError as exc:
+        # Transport-level upstream failure while reading the response body (SSE stream).
+        #
+        # Common example:
+        #   ClientPayloadError: Response payload is not completed: <TransferEncodingError ...>
+        #
+        # This usually means the upstream connection was truncated mid-transfer (peer or middlebox
+        # closed early). It's not an application-layer OpenAI error; we surface it as
+        # "upstream_unavailable" so clients can treat it as retryable.
         yield format_sse_event(
             response_failed_event("upstream_unavailable", str(exc), response_id=get_request_id()),
         )

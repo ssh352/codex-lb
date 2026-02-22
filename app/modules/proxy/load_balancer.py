@@ -119,6 +119,21 @@ class LoadBalancer:
     def invalidate_snapshot(self) -> None:
         self._snapshot = None
 
+    async def select_forced_account(self, account_id: str) -> AccountSelection:
+        # Force selection bypasses eligibility checks and pinned-pool logic. This is intended for
+        # operator debugging ("what does this specific upstream account return right now?") where
+        # normal failover/pinning would otherwise hide the target account's behavior.
+        await self._maybe_invalidate_snapshot_on_pinned_change()
+        snapshot = await self._get_snapshot()
+        selected = snapshot.account_map.get(account_id)
+        if selected is None:
+            return AccountSelection(account=None, error_message="Forced account not found")
+
+        selected_snapshot = _clone_account(selected)
+        runtime = self._runtime.setdefault(selected_snapshot.id, RuntimeState())
+        runtime.last_selected_at = time.time()
+        return AccountSelection(account=selected_snapshot, error_message=None)
+
     def debug_events(self, *, limit: int) -> list[LoadBalancerSelectionEvent]:
         capped = max(0, min(int(limit), len(self._debug_events)))
         if capped <= 0:
@@ -218,6 +233,10 @@ class LoadBalancer:
     ) -> AccountSelection:
         await self._maybe_invalidate_snapshot_on_pinned_change()
         snapshot = await self._get_snapshot()
+        original_account_fields: dict[str, tuple[AccountStatus, str | None, int | None]] = {
+            account_id: (account.status, account.deactivation_reason, account.reset_at)
+            for account_id, account in snapshot.account_map.items()
+        }
         selected_snapshot: Account | None = None
         error_message: str | None = None
         # Routing pool ("pinned accounts") is applied before stickiness:
@@ -432,12 +451,39 @@ class LoadBalancer:
         if result.account is None:
             error_message = result.error_message
         else:
+            sync_needed = False
+            for state in snapshot.states:
+                before = original_account_fields.get(state.account_id)
+                if before is None:
+                    continue
+                before_status, before_reason, before_reset_at = before
+                state_reset_at = int(state.reset_at) if state.reset_at is not None else None
+                if (
+                    before_status != state.status
+                    or before_reason != state.deactivation_reason
+                    or before_reset_at != state_reset_at
+                ):
+                    sync_needed = True
+                    break
+
+            if sync_needed:
+                try:
+                    async with self._repo_factory() as repos:
+                        await self._sync_usage_statuses(repos.accounts, snapshot.account_map, snapshot.states)
+                except Exception:
+                    logger.exception("lb_status_reconcile_failed request_id=%s", get_request_id())
+                    for state in snapshot.states:
+                        account = snapshot.account_map.get(state.account_id)
+                        if account is None:
+                            continue
+                        account.status = state.status
+                        account.deactivation_reason = state.deactivation_reason
+                        account.reset_at = int(state.reset_at) if state.reset_at is not None else None
+
             selected = snapshot.account_map.get(result.account.account_id)
             if selected is None:
                 error_message = result.error_message
             else:
-                selected.status = result.account.status
-                selected.deactivation_reason = result.account.deactivation_reason
                 selected_snapshot = _clone_account(selected)
 
         if selected_snapshot is None:
@@ -664,16 +710,28 @@ class LoadBalancer:
 
     async def mark_usage_limit_reached(self, account: Account, error: UpstreamError) -> None:
         state = self._state_for(account)
-        handle_usage_limit_reached(state, error)
-        logger.info(
-            "lb_mark event=usage_limit_reached account=%s[%s] error_count=%s cooldown_until=%s request_id=%s",
-            account.email,
-            account.id[:3],
-            state.error_count,
-            _dt_iso(_dt_from_epoch(state.cooldown_until)),
-            get_request_id(),
-        )
         async with self._repo_factory() as repos:
+            try:
+                latest_secondary = await repos.usage.latest_by_account(window="secondary")
+            except Exception:
+                latest_secondary = {}
+            entry = latest_secondary.get(account.id)
+            if entry is not None:
+                state.secondary_used_percent = float(entry.used_percent)
+                state.secondary_reset_at = entry.reset_at
+                state.secondary_capacity_credits = usage_core.capacity_for_plan(account.plan_type, "secondary")
+
+            handle_usage_limit_reached(state, error)
+            logger.info(
+                "lb_mark event=usage_limit_reached account=%s[%s] error_count=%s cooldown_until=%s reset_at=%s "
+                "request_id=%s",
+                account.email,
+                account.id[:3],
+                state.error_count,
+                _dt_iso(_dt_from_epoch(state.cooldown_until)),
+                _dt_iso(_dt_from_epoch(state.reset_at)),
+                get_request_id(),
+            )
             await self._sync_state(repos.accounts, account, state)
         # Keep metrics compatibility: `usage_limit_reached` is treated as a rate-limit-like mark.
         get_metrics().observe_lb_mark(event="rate_limit", account_id=account.id)

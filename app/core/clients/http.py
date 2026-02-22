@@ -26,12 +26,26 @@ async def init_http_client() -> HttpClient:
     # Create ClientSession with trust_env=True to automatically use proxy settings
     # from environment variables (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY).
     #
-    # Note: if an HTTP(S) proxy or VPN is in the path and it truncates upstream responses
-    # (especially long-lived streaming/SSE responses), aiohttp can raise:
-    #   - TransferEncodingError / ClientPayloadError ("Response payload is not completed")
-    # This indicates the peer closed the connection before all bytes promised by HTTP framing
-    # (Content-Length/chunked) were received. When debugging, try bypassing the proxy for
-    # upstream hosts via NO_PROXY (e.g. chatgpt.com, auth.openai.com) or unset proxy env vars.
+    # Note on "Response payload is not completed" errors:
+    #
+    # aiohttp can raise TransferEncodingError / ClientPayloadError with messages like:
+    #   "Response payload is not completed: <TransferEncodingError ... Not enough data to satisfy transfer length
+    #   header.>"
+    #
+    # This is NOT an "HTTP 400 response from OpenAI". The "400" in TransferEncodingError is an
+    # internal parse code while decoding chunked transfer encoding. It means the TCP peer (or a
+    # middlebox) closed the connection before all bytes promised by HTTP framing
+    # (Content-Length/chunked) were received.
+    #
+    # In practice, this is most commonly caused by:
+    # - HTTP(S) proxies / VPNs / local forwarders truncating long-lived responses (especially SSE),
+    # - transient network drops or host sleep/wake,
+    # - upstream occasionally closing a stream without a clean terminator.
+    #
+    # codex-lb treats these as upstream transport failures on the streaming path and surfaces them
+    # to clients as "upstream_unavailable" (and stores the error message for debugging). Occasional
+    # occurrences are expected; if they become frequent, first try bypassing proxies for upstream
+    # hosts via NO_PROXY (e.g. chatgpt.com, auth.openai.com) or unset proxy env vars.
     settings = get_settings()
     # `enable_cleanup_closed` is ignored on newer Python patch releases and
     # triggers an aiohttp DeprecationWarning. Keep the option only on runtimes

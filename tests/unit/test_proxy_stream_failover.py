@@ -135,6 +135,7 @@ async def test_streaming_retries_across_accounts_on_retryable_http_error() -> No
         async for line in service._stream_with_retry(
             _payload(),
             {},
+            forced_account_id=None,
             propagate_http_errors=False,
             api="responses",
             suppress_text_done_events=False,
@@ -179,6 +180,7 @@ async def test_streaming_does_not_retry_after_emitting_output() -> None:
         async for line in service._stream_with_retry(
             _payload(),
             {},
+            forced_account_id=None,
             propagate_http_errors=False,
             api="responses",
             suppress_text_done_events=False,
@@ -223,6 +225,7 @@ async def test_streaming_propagates_retryable_http_error_when_no_failover_accoun
     gen = service._stream_with_retry(
         _payload(),
         {},
+        forced_account_id=None,
         propagate_http_errors=True,
         api="responses",
         suppress_text_done_events=False,

@@ -110,6 +110,23 @@ All settings use the `CODEX_LB_` prefix and can be set via environment variables
 
 ## Troubleshooting
 
+### Seeing which account Codex is using (and why it errored)
+
+Codex may display a generic message for upstream failures (e.g. “usage limit reached”). To see the *actual* account
+used and the raw upstream error text:
+
+1. Open the dashboard: `http://127.0.0.1:2455/dashboard`
+2. In **Recent requests**, check:
+   - **Account**: the selected account email
+   - **Error**: the saved upstream error message (hover / click **More** to expand)
+
+If you need selection history independent of request logs, enable debug endpoints and query the LB event buffer:
+
+- Set `CODEX_LB_DEBUG_ENDPOINTS_ENABLED=1` and restart `codex-lb`
+- `GET /debug/lb/events?limit=50` (newest first)
+- `GET /debug/lb/state` (current snapshot + eligibility)
+  - Note: when disabled (default), these endpoints return 404.
+
 ### Debugging missing `prompt_cache_key` / stickiness issues
 
 Enable request logging on the proxy:
