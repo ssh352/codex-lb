@@ -230,6 +230,12 @@ class Metrics:
             "Unix seconds when the load balancer snapshot was last refreshed.",
             registry=self._registry,
         )
+        self._usage_refresh_failures_total = Counter(
+            "codex_lb_usage_refresh_failures_total",
+            "Total usage refresh failures by status code and phase.",
+            labelnames=("status_code", "phase"),
+            registry=self._registry,
+        )
 
         self._request_log_buffer_size = Gauge(
             "codex_lb_request_log_buffer_size",
@@ -440,6 +446,10 @@ class Metrics:
         self._lb_snapshot_refresh_total.inc()
         if updated_at_seconds >= 0:
             self._lb_snapshot_updated_at_seconds.set(float(updated_at_seconds))
+
+    def observe_usage_refresh_failure(self, *, status_code: int, phase: str) -> None:
+        status = str(int(status_code)) if status_code >= 0 else "unknown"
+        self._usage_refresh_failures_total.labels(status_code=status, phase=phase or "unknown").inc()
 
     def refresh_account_identity_gauges(
         self,

@@ -24,6 +24,12 @@ def apply_usage_quota(
 
     if secondary_used is not None:
         if secondary_used >= 100.0:
+            # Weekly (secondary window) exhaustion is a *local* derivation from `usage_history`
+            # and forces `QUOTA_EXCEEDED`, regardless of the last upstream error code/message.
+            #
+            # This is intentionally distinct from upstream "usage limit reached" signals, which
+            # are treated as rate-limit-like and typically persist as `RATE_LIMITED` unless the
+            # usage meter confirms exhaustion.
             status = AccountStatus.QUOTA_EXCEEDED
             used_percent = 100.0
             if secondary_reset is not None:

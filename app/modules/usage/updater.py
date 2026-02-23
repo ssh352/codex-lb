@@ -12,6 +12,7 @@ from app.core.auth.refresh import RefreshError
 from app.core.clients.usage import UsageFetchError, fetch_usage
 from app.core.config.settings import get_settings
 from app.core.crypto import TokenEncryptor
+from app.core.metrics import get_metrics
 from app.core.plan_types import coerce_account_plan_type
 from app.core.usage.models import UsagePayload
 from app.core.utils.request_id import get_request_id
@@ -100,10 +101,6 @@ class UsageUpdater:
             # NOTE: AsyncSession is not safe for concurrent use. Apply DB writes
             # sequentially within the request-scoped session.
             try:
-                if result.deactivate_error is not None:
-                    await self._deactivate_for_client_error(account, result.deactivate_error)
-                    continue
-
                 if result.payload is not None:
                     await self._persist_payload(account, result.payload)
                     await self._usage_repo.commit()
@@ -133,9 +130,8 @@ class UsageUpdater:
                 account_id=usage_account_id,
             )
         except UsageFetchError as exc:
-            if _should_deactivate_for_usage_error(exc.status_code):
-                await self._deactivate_for_client_error(account, exc)
-                return
+            # `initial_fetch` failures are already counted in `_fetch_usage_target` for this path.
+            # Avoid double-counting when we enter the 401 refresh flow.
             if exc.status_code != 401 or not self._auth_manager:
                 return
             try:
@@ -149,8 +145,19 @@ class UsageUpdater:
                     account_id=usage_account_id,
                 )
             except UsageFetchError as retry_exc:
-                if _should_deactivate_for_usage_error(retry_exc.status_code):
-                    await self._deactivate_for_client_error(account, retry_exc)
+                get_metrics().observe_usage_refresh_failure(
+                    status_code=retry_exc.status_code,
+                    phase="post_refresh_retry",
+                )
+                # Keep this path single-retry only. Scheduler cadence (`usage_refresh_interval_seconds`)
+                # is the global backoff control for background usage polling.
+                logger.warning(
+                    "Usage fetch retry failed account_id=%s status=%s message=%s request_id=%s",
+                    account.id,
+                    retry_exc.status_code,
+                    retry_exc.message,
+                    get_request_id(),
+                )
                 return
 
         if payload is None:
@@ -238,45 +245,23 @@ class UsageUpdater:
                     account_id=target.account_id,
                     payload=payload,
                     needs_auth_refresh=False,
-                    deactivate_error=None,
                 )
             except UsageFetchError as exc:
-                if _should_deactivate_for_usage_error(exc.status_code):
-                    return _UsageFetchResult(
-                        account_id=target.account_id,
-                        payload=None,
-                        needs_auth_refresh=False,
-                        deactivate_error=exc,
-                    )
+                # Usage endpoint failures are treated as observability signals, not account-liveness signals.
+                # We intentionally avoid deactivating accounts here because `/wham/usage` can fail even when
+                # proxy routing for the same account remains healthy.
+                get_metrics().observe_usage_refresh_failure(status_code=exc.status_code, phase="initial_fetch")
                 if exc.status_code == 401 and self._auth_manager is not None:
                     return _UsageFetchResult(
                         account_id=target.account_id,
                         payload=None,
                         needs_auth_refresh=True,
-                        deactivate_error=None,
                     )
                 return _UsageFetchResult(
                     account_id=target.account_id,
                     payload=None,
                     needs_auth_refresh=False,
-                    deactivate_error=None,
                 )
-
-    async def _deactivate_for_client_error(self, account: Account, exc: UsageFetchError) -> None:
-        if not self._auth_manager:
-            return
-        reason = f"Usage API error: HTTP {exc.status_code} - {exc.message}"
-        logger.warning(
-            "Deactivating account due to client error account_id=%s status=%s message=%s request_id=%s",
-            account.id,
-            exc.status_code,
-            exc.message,
-            get_request_id(),
-        )
-        await self._auth_manager._repo.update_status(account.id, AccountStatus.DEACTIVATED, reason)
-        account.status = AccountStatus.DEACTIVATED
-        account.deactivation_reason = reason
-        invalidate_accounts_list_cache()
 
 
 def _credits_snapshot(payload: UsagePayload) -> tuple[bool | None, bool | None, float | None]:
@@ -320,13 +305,6 @@ def _reset_at(reset_at: int | None, reset_after_seconds: int | None, now_epoch: 
     return now_epoch + max(0, int(reset_after_seconds))
 
 
-_DEACTIVATING_USAGE_STATUS_CODES = {402, 403, 404}
-
-
-def _should_deactivate_for_usage_error(status_code: int) -> bool:
-    return status_code in _DEACTIVATING_USAGE_STATUS_CODES
-
-
 @dataclass(frozen=True, slots=True)
 class _UsageRefreshTarget:
     account_id: str
@@ -347,4 +325,3 @@ class _UsageFetchResult:
     account_id: str
     payload: UsagePayload | None
     needs_auth_refresh: bool
-    deactivate_error: UsageFetchError | None

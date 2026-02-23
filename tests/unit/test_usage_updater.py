@@ -196,32 +196,39 @@ async def test_usage_updater_persists_plan_type_from_usage_payload(monkeypatch) 
 
 
 @pytest.mark.asyncio
-async def test_usage_updater_deactivates_on_account_invalid_4xx(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("status_code", "message"),
+    [
+        (402, "Payment Required"),
+        (403, "Forbidden"),
+        (404, "Not Found"),
+    ],
+)
+async def test_usage_updater_does_not_deactivate_on_usage_4xx(
+    monkeypatch,
+    status_code: int,
+    message: str,
+) -> None:
     monkeypatch.setenv("CODEX_LB_USAGE_REFRESH_ENABLED", "true")
     from app.core.clients.usage import UsageFetchError
     from app.core.config.settings import get_settings
 
     get_settings.cache_clear()
 
-    async def stub_fetch_usage_402(**_: Any) -> UsagePayload:
-        raise UsageFetchError(402, "Payment Required")
+    async def stub_fetch_usage_4xx(**_: Any) -> UsagePayload:
+        raise UsageFetchError(status_code, message)
 
-    monkeypatch.setattr("app.modules.usage.updater.fetch_usage", stub_fetch_usage_402)
+    monkeypatch.setattr("app.modules.usage.updater.fetch_usage", stub_fetch_usage_4xx)
 
     usage_repo = StubUsageRepository()
     accounts_repo = StubAccountsRepository()
     updater = UsageUpdater(usage_repo, accounts_repo=accounts_repo)
 
-    acc = _make_account("acc_402", "workspace_402", email="payment@example.com")
+    acc = _make_account("acc_4xx", "workspace_4xx", email="usage4xx@example.com")
 
     await updater.refresh_accounts([acc], latest_usage={})
 
-    assert len(accounts_repo.status_updates) == 1
-    update = accounts_repo.status_updates[0]
-    assert update["account_id"] == "acc_402"
-    assert update["status"] == AccountStatus.DEACTIVATED
-    assert "402" in update["deactivation_reason"]
-    assert "Payment Required" in update["deactivation_reason"]
+    assert len(accounts_repo.status_updates) == 0
 
 
 @pytest.mark.asyncio

@@ -60,6 +60,11 @@ def _account_to_summary(
     # and the latest usage reset timestamps. It is only meaningful for blocked statuses
     # (RATE_LIMITED / QUOTA_EXCEEDED). If an account is ACTIVE, any stored reset timestamp should
     # be treated as stale and ignored.
+    #
+    # Note: a long `status_reset_at` (sometimes matching the weekly reset boundary) does not imply
+    # the account status must be `quota_exceeded`. For example, upstream `usage_limit_reached` is
+    # persisted as `rate_limited` by policy, but the upstream-provided reset hint (or usage reset)
+    # may still align with the secondary reset time.
     status_reset_seconds: int | None = None
     if account.status == AccountStatus.RATE_LIMITED:
         usage_reset_seconds = primary_usage.reset_at if primary_usage is not None else None

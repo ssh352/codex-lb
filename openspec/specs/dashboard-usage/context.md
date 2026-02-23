@@ -31,6 +31,22 @@ If you have two accounts with secondary reset times:
 Then any summary “Reset in …” label will show “Reset in 2d”, while account list/cards will show
 each account’s own reset.
 
+### Status vs upstream message
+
+The dashboard can show two related but distinct pieces of information:
+
+- **Upstream message** (in request logs): the raw error code/message returned by the upstream server (e.g.
+  `usage_limit_reached` / “The usage limit has been reached”).
+- **codex-lb account status** (in account lists/cards): a codex-lb classification (`rate_limited` / `quota_exceeded`)
+  based on upstream error signals *and* locally-derived usage meter state (especially the secondary 7d window).
+
+As a result, it is expected that an account can show an upstream “usage limit reached” message in Recent requests
+while the account status is **Quota exceeded** due to secondary-window exhaustion.
+
+Important clarification: `usage_limit_reached` is treated as rate-limit-like for account status (it maps to
+`rate_limited`, not `quota_exceeded`). The status becomes `quota_exceeded` only with an explicit quota-style error
+code and/or confirmed secondary-window exhaustion.
+
 ### What “Consumed 77%” means (Remaining quota by account)
 
 Some dashboard views show a “Remaining quota by account (7D)” visualization with a “Consumed” legend entry.

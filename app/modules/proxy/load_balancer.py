@@ -15,7 +15,6 @@ from app.core.balancer import (
     handle_permanent_failure,
     handle_quota_exceeded,
     handle_rate_limit,
-    handle_usage_limit_reached,
     select_account,
 )
 from app.core.balancer.debug import ineligibility_reason
@@ -736,35 +735,6 @@ class LoadBalancer:
         )
         async with self._repo_factory() as repos:
             await self._sync_state(repos.accounts, account, state)
-        get_metrics().observe_lb_mark(event="rate_limit", account_id=account.id)
-        self._snapshot = None
-
-    async def mark_usage_limit_reached(self, account: Account, error: UpstreamError) -> None:
-        state = self._state_for(account)
-        async with self._repo_factory() as repos:
-            try:
-                latest_secondary = await repos.usage.latest_by_account(window="secondary")
-            except Exception:
-                latest_secondary = {}
-            entry = latest_secondary.get(account.id)
-            if entry is not None:
-                state.secondary_used_percent = float(entry.used_percent)
-                state.secondary_reset_at = entry.reset_at
-                state.secondary_capacity_credits = usage_core.capacity_for_plan(account.plan_type, "secondary")
-
-            handle_usage_limit_reached(state, error)
-            logger.info(
-                "lb_mark event=usage_limit_reached account=%s[%s] error_count=%s cooldown_until=%s reset_at=%s "
-                "request_id=%s",
-                account.email,
-                account.id[:3],
-                state.error_count,
-                _dt_iso(_dt_from_epoch(state.cooldown_until)),
-                _dt_iso(_dt_from_epoch(state.reset_at)),
-                get_request_id(),
-            )
-            await self._sync_state(repos.accounts, account, state)
-        # Keep metrics compatibility: `usage_limit_reached` is treated as a rate-limit-like mark.
         get_metrics().observe_lb_mark(event="rate_limit", account_id=account.id)
         self._snapshot = None
 

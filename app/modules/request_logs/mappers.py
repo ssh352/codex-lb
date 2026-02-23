@@ -7,8 +7,13 @@ from app.db.models import RequestLog
 from app.modules.request_logs.schemas import RequestLogEntry
 
 # `usage_limit_reached` may be emitted transiently upstream even when the usage meter is < 100%.
-# We still classify it as rate-limit-like for logs/UX purposes; routing policy should avoid
-# treating a single occurrence as a multi-day hard lock.
+# We classify it as rate-limit-like for logs/UX purposes.
+#
+# Important distinction:
+# - Request logs record raw upstream error codes/messages (e.g. `usage_limit_reached`).
+# - Account status (`rate_limited` / `quota_exceeded`) is codex-lb policy + derived state and may
+#   be driven by usage history (e.g. secondary window exhaustion) even if the most recent upstream
+#   error was `usage_limit_reached`.
 RATE_LIMIT_CODES = {"rate_limit_exceeded", "usage_limit_reached"}
 QUOTA_CODES = {"insufficient_quota", "usage_not_included", "quota_exceeded"}
 

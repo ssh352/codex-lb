@@ -199,6 +199,9 @@ class ProxyService:
                             prompt_cache_key_hash=prompt_cache_key_hash,
                             codex_session_id=codex_session_id,
                             codex_conversation_id=codex_conversation_id,
+                            # Note: this timestamp is when codex-lb persists the request log (effectively "request
+                            # finished" time), not when the upstream request started. When debugging apparent
+                            # "success after error" sequences, consider `latency_ms` to approximate start times.
                             requested_at=utcnow(),
                         )
                     )
@@ -221,6 +224,9 @@ class ProxyService:
                         prompt_cache_key_hash=prompt_cache_key_hash,
                         codex_session_id=codex_session_id,
                         codex_conversation_id=codex_conversation_id,
+                        # Note: this timestamp is when codex-lb persists the request log (effectively "request
+                        # finished" time), not when the upstream request started. When debugging apparent
+                        # "success after error" sequences, consider `latency_ms` to approximate start times.
                         requested_at=utcnow(),
                     )
 
@@ -1002,24 +1008,12 @@ class ProxyService:
         await self._handle_stream_error(account, _upstream_error_from_openai(error), code)
 
     async def _handle_stream_error(self, account: Account, error: UpstreamError, code: str) -> None:
-        # NOTE: `usage_limit_reached` is not guaranteed to mean "weekly quota is fully exhausted".
-        # In practice it can appear transiently (and even be followed by successful requests) while
-        # `/backend-api/wham/usage` still reports <100% used for the secondary window and the
-        # secondary window reset boundary remains far in the future.
-        #
-        # Implication: do not treat the usage window reset time as a hard "blocked until" gate for
-        # `usage_limit_reached`. Prefer the reset boundary embedded in the upstream error payload
-        # (`resets_at` / `resets_in_seconds`) when available, and keep a separate short-term backoff
-        # mechanism (cooldown) to avoid hammering upstream during error streaks.
-        #
-        # Operationally, a "fail-open with cooldown/backoff" policy tends to be safer than locking
-        # an account out for days on a single `usage_limit_reached`. If upstream *is* truly hard
-        # limiting, repeated errors and/or a refreshed usage snapshot should confirm it.
-        if code == "rate_limit_exceeded":
+        # Upstream `usage_limit_reached` is treated as rate-limit-like (not quota-exceeded) for
+        # account status. This matches upstream behavior and keeps codex-lb status semantics stable:
+        # `quota_exceeded` is reserved for explicit quota error codes and/or confirmed weekly
+        # (secondary window) exhaustion.
+        if code in {"rate_limit_exceeded", "usage_limit_reached"}:
             await self._load_balancer.mark_rate_limit(account, error)
-            return
-        if code == "usage_limit_reached":
-            await self._load_balancer.mark_usage_limit_reached(account, error)
             return
         if code in {"insufficient_quota", "usage_not_included", "quota_exceeded"}:
             await self._load_balancer.mark_quota_exceeded(account, error)

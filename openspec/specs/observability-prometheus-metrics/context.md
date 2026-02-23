@@ -25,6 +25,23 @@ Recommended:
 
 Grafana should be bound to localhost only by default.
 
+### Selective model cleanup caveat (TSDB tombstones)
+
+If you need to remove one model label from Prometheus history (for example `model="gpt-4.1-mini"`), keep in mind:
+
+- `delete_series` is tombstone-based, not an immediate physical purge of all index metadata.
+- You can see zero active samples for that model in instant/range queries while `/series` or `label_values`
+  still return historical labelsets for some time.
+- If the exporter keeps emitting that label, Prometheus will ingest it again on the next scrape unless you
+  block it with `metric_relabel_configs`.
+
+Operational verification should prioritize active query behavior:
+
+- Pass: instant/range queries for `{model="gpt-4.1-mini"}` return no active samples.
+- Non-blocking: `/series` or `label_values` may still show historical metadata until compaction/retention.
+
+Enable Prometheus admin API only for cleanup windows, then disable it again.
+
 ### Suggested panels (PromQL)
 
 - Top 20 accounts by remaining secondary credits:

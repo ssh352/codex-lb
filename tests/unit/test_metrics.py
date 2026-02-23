@@ -130,6 +130,31 @@ def test_metrics_observes_proxy_retry() -> None:
     )
 
 
+def test_metrics_observes_usage_refresh_failures() -> None:
+    registry = CollectorRegistry(auto_describe=True)
+    metrics = Metrics(registry=registry)
+    metrics.observe_usage_refresh_failure(status_code=403, phase="initial_fetch")
+    metrics.observe_usage_refresh_failure(status_code=403, phase="post_refresh_retry")
+
+    rendered = metrics.render().decode("utf-8")
+    assert (
+        _sample_value(
+            rendered,
+            "codex_lb_usage_refresh_failures_total",
+            {"status_code": "403", "phase": "initial_fetch"},
+        )
+        == 1.0
+    )
+    assert (
+        _sample_value(
+            rendered,
+            "codex_lb_usage_refresh_failures_total",
+            {"status_code": "403", "phase": "post_refresh_retry"},
+        )
+        == 1.0
+    )
+
+
 def test_metrics_refreshes_account_identity() -> None:
     registry = CollectorRegistry(auto_describe=True)
     metrics = Metrics(registry=registry)

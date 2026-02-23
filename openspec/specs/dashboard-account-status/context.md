@@ -16,6 +16,26 @@ Dashboard endpoints reconcile persisted state:
 
 This makes the dashboard reflect real eligibility without requiring an operator to click **Resume**.
 
+### Blocked status sources (upstream vs derived)
+
+The account status shown in the dashboard is not always a direct reflection of the most recent upstream error code.
+
+- **Upstream error codes (saved in request logs)** are raw signals, e.g.:
+  - rate-limit-like: `rate_limit_exceeded`, `usage_limit_reached`
+  - quota-like: `quota_exceeded`, `insufficient_quota`, `usage_not_included`
+- **codex-lb status (`accounts.status`)** is a policy + derived-state classification:
+  - `rate_limited` is commonly persisted for upstream `usage_limit_reached` so codex-lb backs off and retries.
+    - This matches upstream behavior: `usage_limit_reached` is treated as rate-limit-like (not quota-exceeded).
+    - The persisted “blocked until” boundary SHOULD come from upstream reset hints (`resets_at` /
+      `resets_in_seconds`) when available.
+  - `quota_exceeded` is set when:
+    - upstream sends an explicit quota-like error code, and/or
+    - the local weekly usage meter (secondary window) reaches exhaustion (`usage_history(window=secondary).used_percent >= 100`).
+
+This means it is expected to see:
+- the most recent upstream error message saying “usage limit reached”, while
+- the account status shown as **Quota exceeded** (because the weekly usage meter is exhausted).
+
 ### Example
 
 If an account is stored as:

@@ -5,7 +5,6 @@ from app.core.balancer.logic import (
     handle_permanent_failure,
     handle_quota_exceeded,
     handle_rate_limit,
-    handle_usage_limit_reached,
     select_account,
 )
 
@@ -16,6 +15,5 @@ __all__ = [
     "handle_permanent_failure",
     "handle_quota_exceeded",
     "handle_rate_limit",
-    "handle_usage_limit_reached",
     "select_account",
 ]
