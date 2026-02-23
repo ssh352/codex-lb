@@ -12,6 +12,8 @@ class RequestLogEntry(DashboardModel):
     requested_at: datetime
     account_id: str
     request_id: str
+    codex_session_id: str | None = None
+    codex_conversation_id: str | None = None
     model: str
     status: str
     error_code: str | None = None

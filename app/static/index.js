@@ -782,6 +782,8 @@
 			timestamp: entry.requestedAt,
 			accountId: entry.accountId,
 			requestId: entry.requestId,
+			codexSessionId: entry.codexSessionId ?? null,
+			codexConversationId: entry.codexConversationId ?? null,
 			model: entry.model,
 			reasoningEffort: entry.reasoningEffort ?? null,
 			status: entry.status,
@@ -1206,6 +1208,8 @@
 		const requests = state.dashboardData.recentRequests.map((request) => {
 			const rawError = request.errorMessage || request.errorCode || "";
 			const accountLabel = formatAccountLabel(request.accountId, accounts);
+			const sessionId = String(request.codexSessionId || "").trim();
+			const sessionShort = sessionId ? sessionId.slice(0, 8) : "";
 			const modelLabel = formatModelLabel(request.model, request.reasoningEffort);
 			const totalTokens = formatCompactNumber(request.tokens);
 			const cachedInputTokens = toNumber(request.cachedInputTokens);
@@ -1213,6 +1217,8 @@
 			return {
 				key: `${request.requestId}-${request.timestamp}`,
 				requestId: request.requestId,
+				sessionId,
+				sessionShort,
 				time: formatTimeLong(request.timestamp),
 				account: accountLabel,
 				model: modelLabel,

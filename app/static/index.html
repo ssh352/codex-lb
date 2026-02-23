@@ -338,6 +338,7 @@
                   <tr>
                     <th class="highlighted indicator" style="width: 15%">Time</th>
                     <th style="width: 25%">Account</th>
+                    <th style="width: 10%">Session</th>
                     <th style="width: 15%">Model</th>
                     <th style="width: 10%">Status</th>
                     <th style="width: 15%">Error</th>
@@ -353,6 +354,18 @@
                         <div x-text="request.time.date" class="text-muted" style="font-size: 11px;"></div>
                       </td>
                       <td class="cell-truncate" x-text="request.account" :title="request.account"></td>
+                      <td>
+                        <template x-if="request.sessionId">
+                          <div class="session-id-cell">
+                            <span class="session-id-short" x-text="request.sessionShort" :title="request.sessionId"></span>
+                            <button type="button" class="copy-button" title="Copy session ID" aria-label="Copy session ID"
+                              @click.stop="copyText(request.sessionId, 'Session ID')">⧉</button>
+                          </div>
+                        </template>
+                        <template x-if="!request.sessionId">
+                          <span class="text-muted">--</span>
+                        </template>
+                      </td>
                       <td class="cell-truncate" x-text="request.model" :title="request.model"></td>
                       <td><span class="status-pill" :class="request.status.class" x-text="request.status.label"></span>
                       </td>

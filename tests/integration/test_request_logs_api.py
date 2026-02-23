@@ -117,3 +117,5 @@ async def test_request_logs_search_matches_codex_session_id(async_client, db_set
     assert response.status_code == 200
     payload = response.json()["requests"]
     assert [entry["requestId"] for entry in payload] == ["req_logs_session_1"]
+    assert payload[0]["codexSessionId"] == "codex_sess_123"
+    assert payload[0]["codexConversationId"] == "codex_conv_abc"

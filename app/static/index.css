@@ -1015,8 +1015,26 @@ body {
 }
 
 .table-wrap--requests td:nth-child(2),
-.table-wrap--requests td:nth-child(5) {
+.table-wrap--requests td:nth-child(6) {
   text-align: left;
+}
+
+.session-id-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-id-short {
+  width: 8ch;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 

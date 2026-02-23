@@ -68,6 +68,7 @@ async def test_dashboard_overview_combines_data(async_client, db_setup):
             latency_ms=50,
             status="success",
             error_code=None,
+            codex_session_id="codex_sess_dash_123",
             requested_at=now - timedelta(minutes=1),
         )
 
@@ -80,6 +81,7 @@ async def test_dashboard_overview_combines_data(async_client, db_setup):
     assert payload["windows"]["primary"]["windowKey"] == "primary"
     assert payload["windows"]["secondary"]["windowKey"] == "secondary"
     assert len(payload["requestLogs"]) == 1
+    assert payload["requestLogs"][0]["codexSessionId"] == "codex_sess_dash_123"
     assert payload["lastSyncAt"] == secondary_time.isoformat() + "Z"
     assert payload["wastePacing"]["summary"]["accountsEvaluated"] == 1
     matched = next((entry for entry in payload["wastePacing"]["accounts"] if entry["accountId"] == "acc_dash"), None)
