@@ -3,7 +3,7 @@
   "title": "codex-lb",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+	  "version": 12,
   "refresh": "1m",
   "time": {
     "from": "now-24h",
@@ -101,7 +101,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) * 3600"
+	          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) * 3600"
         }
       ]
     },
@@ -118,7 +118,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (model) (rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) * 3600"
+	          "expr": "sum by (model) (rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) * 3600"
         }
       ]
     },
@@ -135,7 +135,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (kind) (rate(codex_lb_proxy_tokens_total{model=~\"$model\"}[1h])) * 60"
+	          "expr": "sum by (kind) (rate(codex_lb_proxy_tokens_total{model=~\"$model\"}[1h])) * 60"
         }
       ]
     },
@@ -152,7 +152,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum(increase(codex_lb_proxy_tokens_total{kind=\"cached_input\",model=~\"$model\"}[1h])) / clamp_min(sum(increase(codex_lb_proxy_tokens_total{kind=\"input\",model=~\"$model\"}[1h])), 1)",
+	          "expr": "100 * sum(increase(codex_lb_proxy_tokens_total{kind=\"cached_input\",model=~\"$model\"}[1h])) / clamp_min(sum(increase(codex_lb_proxy_tokens_total{kind=\"input\",model=~\"$model\"}[1h])), 1)",
           "interval": "1h"
         }
       ],
@@ -178,7 +178,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (model) (rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h])) * 60"
+	          "expr": "sum by (model) (rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h])) * 60"
         }
       ]
     },
@@ -195,37 +195,50 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(codex_lb_proxy_requests_total{status=\"error\",model=~\"$model\",api=~\"$api\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h]))"
+	          "expr": "sum(rate(codex_lb_proxy_requests_total{status=\"error\",model=~\"$model\",api=~\"$api\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h]))"
         }
       ]
     },
-    {
-      "id": 7,
-      "type": "timeseries",
-      "title": "Latency p50/p95 (s)",
-      "gridPos": {
-        "x": 0,
-        "y": 22,
-        "w": 12,
-        "h": 7
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (model, le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000",
-          "legendFormat": "p50 {{model}}"
+	    {
+	      "id": 7,
+	      "type": "timeseries",
+	      "title": "Latency p50/p95 (global, s)",
+		      "description": "Server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), derived from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this measures total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb network/UI time. Retries/failovers contribute separate samples. PromQL: histogram_quantile over sum by (le) of rate(...[1h]) across selected model/api. p50=median; p95=tail (95% of attempts are faster).",
+	      "gridPos": {
+	        "x": 0,
+	        "y": 22,
+	        "w": 12,
+	        "h": 7
+	      },
+	      "targets": [
+	        {
+	          "refId": "A",
+		          "expr": "histogram_quantile(0.5, sum by (le) (clamp_min(rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]), 0))) / 1000",
+	          "legendFormat": "p50"
+	        },
+	        {
+	          "refId": "B",
+		          "expr": "histogram_quantile(0.95, sum by (le) (clamp_min(rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]), 0))) / 1000",
+	          "legendFormat": "p95"
+	        }
+	      ],
+	      "fieldConfig": {
+	        "defaults": {
+	          "unit": "s"
+	        },
+	        "overrides": []
+	      },
+	      "options": {
+	        "legend": {
+	          "calcs": [],
+	          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
-        {
-          "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (model, le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000",
-          "legendFormat": "p95 {{model}}"
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
       }
     },
     {
@@ -241,23 +254,77 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h]))"
+	          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h]))"
         }
       ]
     },
-    {
-      "id": 10,
-      "type": "timeseries",
-      "title": "Top 10 error codes",
-      "gridPos": {
-        "x": 12,
-        "y": 29,
-        "w": 12,
-        "h": 8
+	    {
+	      "id": 9,
+	      "type": "timeseries",
+	      "title": "Latency p95 by model (s)",
+		      "description": "Per-model p95 (tail) server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this is total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb time; retries/failovers are separate samples. PromQL: histogram_quantile over sum by (model, le) of rate(...[1h]) for selected model/api.",
+	      "gridPos": {
+	        "x": 0,
+	        "y": 29,
+	        "w": 12,
+	        "h": 8
+	      },
+	      "targets": [
+	        {
+	          "refId": "A",
+		          "expr": "histogram_quantile(0.95, sum by (model, le) (clamp_min(rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]), 0))) / 1000",
+	          "legendFormat": "{{model}}"
+	        }
+	      ],
+	      "fieldConfig": {
+	        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
       },
-      "targets": [
-        {
-          "refId": "A",
+	      "options": {
+	        "legend": {
+	          "calcs": [],
+	          "displayMode": "list",
+	          "placement": "bottom",
+	          "showLegend": true
+	        },
+	        "tooltip": {
+	          "mode": "single",
+	          "sort": "none"
+	        }
+	      }
+	    },
+	    {
+	      "id": 10,
+	      "type": "timeseries",
+	      "title": "Top 10 error codes",
+	      "gridPos": {
+	        "x": 12,
+	        "y": 52,
+	        "w": 12,
+	        "h": 7
+	      },
+	      "targets": [
+	        {
+	          "refId": "A",
           "expr": "topk(10, sum by (error_code) (rate(codex_lb_proxy_errors_total[1h])))",
           "legendFormat": "{{error_code}}"
         }
@@ -334,28 +401,65 @@
         }
       ]
     },
-		    {
-		      "id": 19,
-		      "type": "timeseries",
-		      "title": "Routing: mark events/min",
-			      "description": "How often the load balancer \"marks\" an account due to upstream signals. A mark is a state update on a specific account (e.g., set/extend cooldown until reset, mark quota exceeded, record a permanent failure code, or record an error) so routing can avoid/select it appropriately. This panel plots sum by (event) of rate(codex_lb_lb_mark_total{event,account_id}) and converts to per-minute. event: rate_limit (includes usage_limit_reached), quota_exceeded, permanent_failure, error.",
-	      "gridPos": {
-	        "x": 0,
-	        "y": 52,
-	        "w": 12,
-	        "h": 7
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Routing: mark events/min",
+      "description": "How often the load balancer \"marks\" an account due to upstream signals. A mark is a state update on a specific account (e.g., set/extend cooldown until reset, mark quota exceeded, record a permanent failure code, or record an error) so routing can avoid/select it appropriately. This panel plots sum by (event) of rate(codex_lb_lb_mark_total{event,account_id}) and converts to per-minute. event: rate_limit (includes usage_limit_reached), quota_exceeded, permanent_failure, error.",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 12,
+        "h": 7
       },
       "targets": [
         {
           "refId": "A",
           "expr": "sum by (event) (rate(codex_lb_lb_mark_total[1h])) * 60"
         }
-	      ]
-	    },
+      ]
+    },
 	    {
-	      "id": 21,
+	      "id": 20,
 	      "type": "timeseries",
-	      "title": "Cost/hr by account (selected)",
+	      "title": "Latency p50 by model (s)",
+		      "description": "Per-model p50 (median) server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this is total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb time; retries/failovers are separate samples. PromQL: histogram_quantile over sum by (model, le) of rate(...[1h]) for selected model/api.",
+	      "gridPos": {
+	        "x": 12,
+	        "y": 29,
+	        "w": 12,
+	        "h": 8
+	      },
+	      "targets": [
+	        {
+	          "refId": "A",
+		          "expr": "histogram_quantile(0.5, sum by (model, le) (clamp_min(rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]), 0))) / 1000",
+	          "legendFormat": "{{model}}"
+	        }
+	      ],
+	      "fieldConfig": {
+	        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+	      "options": {
+	        "legend": {
+	          "calcs": [],
+	          "displayMode": "list",
+	          "placement": "bottom",
+	          "showLegend": true
+	        },
+	        "tooltip": {
+	          "mode": "single",
+	          "sort": "none"
+	        }
+	      }
+	    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Cost/hr by account (selected)",
       "gridPos": {
         "x": 0,
         "y": 59,
@@ -389,6 +493,25 @@
       ]
     },
     {
+      "id": 36,
+      "type": "timeseries",
+      "title": "Usage refresh failures/min (status + phase)",
+      "description": "Background usage polling failures. phase=initial_fetch is first attempt; phase=post_refresh_retry is retry after 401-triggered token refresh.",
+      "gridPos": {
+        "x": 0,
+        "y": 66,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status_code, phase) (rate(codex_lb_usage_refresh_failures_total[$__rate_interval])) * 60",
+          "legendFormat": "{{status_code}} {{phase}}"
+        }
+      ]
+    },
+    {
       "id": 25,
       "type": "timeseries",
       "title": "Retries/min (by error class)",
@@ -405,15 +528,15 @@
         }
       ]
     },
-			    {
-			      "id": 26,
-			      "type": "table",
-			      "title": "Estimated Weekly Quota (USD, 7d)",
-				      "description": "Rolling per-account estimate from SQLite. Quota ≈ Spend / (used_pp/100), where Spend is proxy cost from request_logs and used_pp is the latest secondary usage_history.used_percent for the current weekly cycle (clamped to [0,100]); both are clipped to the last 7 days. Use $secondary_quota_min_pp to suppress thin-signal accounts.",
-				      "gridPos": {
-				        "x": 12,
-				        "y": 74,
-				        "w": 12,
+				    {
+				      "id": 26,
+				      "type": "table",
+				      "title": "Estimated Weekly Quota (USD, 7d)",
+						      "description": "Rolling per-account estimate from SQLite. Quota ≈ Spend / (used_pp/100), where Spend is proxy cost from request_logs and used_pp is the latest secondary usage_history.used_percent for the current weekly cycle (clamped to [0,100]); both are clipped to the last 7 days. Use $secondary_quota_min_pp to suppress thin-signal accounts. Note: the PromQL wraps the label_join() input in extra parentheses for readability only (no semantic change).",
+					      "gridPos": {
+					        "x": 12,
+					        "y": 74,
+					        "w": 12,
 				        "h": 7
 				      },
 			      "fieldConfig": {
@@ -713,7 +836,7 @@
           "refId": "A",
           "instant": true,
           "format": "table",
-      "expr": "topk(20, max by (account_id, account_display) (label_join((codex_lb_secondary_implied_quota_usd_7d{account_id=~\"$account\"} and on(account_id) (codex_lb_secondary_used_percent_delta_pp_7d{account_id=~\"$account\"} >= $secondary_quota_min_pp)) * on(account_id) group_left(display, plan_type) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\"), \"plan_type\", \"unknown\", \"account_id\", \"(.*)\")), \"account_display\", \"::\", \"plan_type\", \"display\")))"
+      "expr": "max by (account_id, account_display) (label_join(((codex_lb_secondary_implied_quota_usd_7d{account_id=~\"$account\"} and on(account_id) (codex_lb_secondary_used_percent_delta_pp_7d{account_id=~\"$account\"} >= $secondary_quota_min_pp)) * on(account_id) group_left(display, plan_type) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\"), \"plan_type\", \"unknown\", \"account_id\", \"(.*)\"))), \"account_display\", \"::\", \"plan_type\", \"display\"))"
         },
         {
           "refId": "B",
@@ -742,19 +865,21 @@
       "collapsed": false,
       "panels": []
     },
-			    {
-			      "id": 28,
-			      "type": "timeseries",
-			      "title": "Cost/day (USD, total + 7d avg)",
-			      "gridPos": {
-			        "x": 0,
-			        "y": 82,
-			        "w": 12,
+				    {
+				      "id": 28,
+				      "type": "timeseries",
+				      "title": "Cost/day (USD, completed days + 7d avg)",
+				      "description": "Daily bars are completed days (increase(...[1d]) evaluated at 1d steps). The rightmost bar is usually yesterday. Compare with the \"Cost yesterday (USD)\" stat.",
+				      "gridPos": {
+				        "x": 0,
+				        "y": 82,
+				        "w": 12,
 			        "h": 7
 			      },
-		      "hideTimeOverride": true,
-		      "timeFrom": "now-30d/d",
-		      "fieldConfig": {
+			      "hideTimeOverride": true,
+			      "timeFrom": "now-30d/d",
+				      "timeTo": "now/d",
+			      "fieldConfig": {
 		        "defaults": {
 		          "custom": {
 		            "drawStyle": "bars",
@@ -790,13 +915,13 @@
 		      "targets": [
 		        {
 		          "refId": "A",
-		          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1d]))",
+			          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1d]))",
 		          "interval": "1d",
 		          "legendFormat": "daily"
 		        },
 		        {
 		          "refId": "B",
-		          "expr": "avg_over_time((sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1d])))[7d:1d])",
+			          "expr": "avg_over_time((sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1d])))[7d:1d])",
 		          "interval": "1d",
 		          "legendFormat": "7d avg"
 		        }
@@ -804,22 +929,185 @@
 		    },
 		    {
 		      "id": 29,
-		      "type": "timeseries",
-		      "title": "Cost/day (USD, top accounts)",
+		      "type": "table",
+			      "title": "Cost yesterday (USD, top 20 accounts)",
+		      "description": "Top 20 accounts by cost for the last completed day (yesterday, browser TZ). Account text is colored by plan type; the value bar is value-colored.",
 		      "gridPos": {
 		        "x": 12,
 		        "y": 82,
 		        "w": 12,
-		        "h": 7
+		        "h": 14
 		      },
 	      "hideTimeOverride": true,
-	      "timeFrom": "now-30d/d",
+	      "timeFrom": "now-2d/d",
+	      "timeTo": "now/d",
+	      "fieldConfig": {
+	        "defaults": {
+	          "color": {
+	            "mode": "thresholds"
+	          },
+	          "custom": {
+	            "align": "auto",
+	            "cellOptions": {
+	              "type": "auto"
+	            },
+	            "inspect": false
+	          },
+	          "mappings": [],
+	          "thresholds": {
+	            "mode": "absolute",
+	            "steps": [
+	              {
+	                "color": "green",
+	                "value": null
+	              },
+	              {
+	                "color": "red",
+	                "value": 1
+	              }
+	            ]
+	          }
+	        },
+	        "overrides": [
+	          {
+	            "matcher": {
+	              "id": "byName",
+	              "options": "Account"
+	            },
+	            "properties": [
+	              {
+	                "id": "custom.cellOptions",
+	                "value": {
+	                  "type": "color-text"
+	                }
+	              },
+	              {
+	                "id": "mappings",
+	                "value": [
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^free::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#71717a"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^plus::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#1d4ed8"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^pro::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#6d28d9"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^unknown::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#a1a1aa"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^[^:]+::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#71717a"
+	                      }
+	                    }
+	                  }
+	                ]
+	              }
+	            ]
+	          },
+	          {
+	            "matcher": {
+	              "id": "byName",
+	              "options": "Cost yesterday (USD)"
+	            },
+	            "properties": [
+	              {
+	                "id": "unit",
+	                "value": "currencyUSD"
+	              },
+	              {
+	                "id": "decimals",
+	                "value": 2
+	              },
+	              {
+	                "id": "color",
+	                "value": {
+	                  "mode": "continuous-GrYlRd"
+	                }
+	              },
+	              {
+	                "id": "custom.cellOptions",
+	                "value": {
+	                  "type": "gauge",
+	                  "mode": "gradient"
+	                }
+	              }
+	            ]
+		          }
+		        ]
+		      },
+	      "options": {
+	        "showHeader": true,
+	        "cellHeight": "sm",
+	        "sortBy": [
+	          {
+	            "displayName": "Cost yesterday (USD)",
+	            "desc": true
+	          }
+	        ]
+	      },
+	      "transformations": [
+	        {
+	          "id": "labelsToFields",
+	          "options": {}
+	        },
+	        {
+	          "id": "organize",
+	          "options": {
+	            "excludeByName": {
+	              "Time": true,
+	              "account_id": true
+	            },
+	            "renameByName": {
+	              "account_display": "Account",
+	              "Value": "Cost yesterday (USD)"
+	            },
+	            "indexByName": {
+	              "Account": 0,
+	              "Cost yesterday (USD)": 1
+	            }
+	          }
+	        }
+	      ],
 	      "targets": [
 			        {
 			          "refId": "A",
-			          "expr": "label_replace(topk(20, sum by (account_id) (increase(codex_lb_proxy_account_cost_usd_total{account_id=~\"$account\",api=~\"$api\"}[1d]))) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
-			          "interval": "1d",
-			          "legendFormat": "{{display}}"
+			          "instant": true,
+		          "format": "table",
+			          "expr": "max by (account_id, account_display) (label_join((topk(20, sum by (account_id) (increase(codex_lb_proxy_account_cost_usd_total{account_id=~\"$account\",api=~\"$api\"}[1d]))) * on(account_id) group_left(display, plan_type) (0 * (codex_lb_account_identity or on(account_id) label_replace(label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\"), \"plan_type\", \"unknown\", \"account_id\", \"(.*)\")) + 1)), \"account_display\", \"::\", \"plan_type\", \"display\"))"
 			        }
 	      ]
 	    },
@@ -833,9 +1121,10 @@
 			        "w": 12,
 			        "h": 7
 			      },
-		      "hideTimeOverride": true,
-		      "timeFrom": "now-30d/d",
-		      "fieldConfig": {
+			      "hideTimeOverride": true,
+			      "timeFrom": "now-30d/d",
+			      "timeTo": "now/d",
+			      "fieldConfig": {
 		        "defaults": {
 		          "custom": {
 		            "drawStyle": "bars",
@@ -871,13 +1160,13 @@
 		      "targets": [
 		        {
 		          "refId": "A",
-		          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1d]))",
+			          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1d]))",
 		          "interval": "1d",
 		          "legendFormat": "daily"
 		        },
 		        {
 		          "refId": "B",
-		          "expr": "avg_over_time((sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1d])))[7d:1d])",
+			          "expr": "avg_over_time((sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1d])))[7d:1d])",
 		          "interval": "1d",
 		          "legendFormat": "7d avg"
 		        }
@@ -885,23 +1174,554 @@
 		    },
 		    {
 		      "id": 31,
-		      "type": "timeseries",
-		      "title": "Requests/day (top accounts)",
+		      "type": "table",
+			      "title": "Requests yesterday (top 20 accounts)",
+		      "description": "Top 20 accounts by requests for the last completed day (yesterday, browser TZ). Account text is colored by plan type; the value bar is value-colored.",
 		      "gridPos": {
 		        "x": 12,
-		        "y": 89,
+		        "y": 96,
 		        "w": 12,
-		        "h": 7
+		        "h": 14
 		      },
 	      "hideTimeOverride": true,
-	      "timeFrom": "now-30d/d",
+	      "timeFrom": "now-2d/d",
+	      "timeTo": "now/d",
+	      "fieldConfig": {
+	        "defaults": {
+	          "color": {
+	            "mode": "thresholds"
+	          },
+	          "custom": {
+	            "align": "auto",
+	            "cellOptions": {
+	              "type": "auto"
+	            },
+	            "inspect": false
+	          },
+	          "mappings": [],
+	          "thresholds": {
+	            "mode": "absolute",
+	            "steps": [
+	              {
+	                "color": "green",
+	                "value": null
+	              },
+	              {
+	                "color": "red",
+	                "value": 1
+	              }
+	            ]
+	          }
+	        },
+	        "overrides": [
+	          {
+	            "matcher": {
+	              "id": "byName",
+	              "options": "Account"
+	            },
+	            "properties": [
+	              {
+	                "id": "custom.cellOptions",
+	                "value": {
+	                  "type": "color-text"
+	                }
+	              },
+	              {
+	                "id": "mappings",
+	                "value": [
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^free::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#71717a"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^plus::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#1d4ed8"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^pro::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#6d28d9"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^unknown::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#a1a1aa"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^[^:]+::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#71717a"
+	                      }
+	                    }
+	                  }
+	                ]
+	              }
+	            ]
+	          },
+	          {
+	            "matcher": {
+	              "id": "byName",
+	              "options": "Requests yesterday"
+	            },
+	            "properties": [
+	              {
+	                "id": "unit",
+	                "value": "short"
+	              },
+	              {
+	                "id": "decimals",
+	                "value": 0
+	              },
+	              {
+	                "id": "color",
+	                "value": {
+	                  "mode": "continuous-GrYlRd"
+	                }
+	              },
+	              {
+	                "id": "custom.cellOptions",
+	                "value": {
+	                  "type": "gauge",
+	                  "mode": "gradient"
+	                }
+	              }
+	            ]
+	          }
+	        ]
+	      },
+	      "options": {
+	        "showHeader": true,
+	        "cellHeight": "sm",
+	        "sortBy": [
+	          {
+	            "displayName": "Requests yesterday",
+	            "desc": true
+	          }
+	        ]
+	      },
+	      "transformations": [
+	        {
+	          "id": "labelsToFields",
+	          "options": {}
+	        },
+	        {
+	          "id": "organize",
+	          "options": {
+	            "excludeByName": {
+	              "Time": true,
+	              "account_id": true
+	            },
+	            "renameByName": {
+	              "account_display": "Account",
+	              "Value": "Requests yesterday"
+	            },
+	            "indexByName": {
+	              "Account": 0,
+	              "Requests yesterday": 1
+	            }
+	          }
+	        }
+	      ],
 	      "targets": [
 			        {
 			          "refId": "A",
-		          "expr": "label_replace(topk(20, sum by (account_id) (increase(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1d]))) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
-		          "interval": "1d",
-		          "legendFormat": "{{display}}"
-		        }
+			          "instant": true,
+		          "format": "table",
+			          "expr": "max by (account_id, account_display) (label_join((topk(20, sum by (account_id) (increase(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1d]))) * on(account_id) group_left(display, plan_type) (0 * (codex_lb_account_identity or on(account_id) label_replace(label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\"), \"plan_type\", \"unknown\", \"account_id\", \"(.*)\")) + 1)), \"account_display\", \"::\", \"plan_type\", \"display\"))"
+			        }
+	      ]
+	    },
+		    {
+		      "id": 39,
+		      "type": "table",
+		      "title": "Cost (USD, 30d total, top 20 accounts)",
+		      "description": "Top 20 accounts by total cost over the last 30 completed days. Account text is colored by plan type; the value bar is value-colored.",
+		      "gridPos": {
+		        "x": 0,
+		        "y": 110,
+		        "w": 12,
+		        "h": 14
+		      },
+	      "hideTimeOverride": true,
+	      "timeFrom": "now-30d/d",
+	      "timeTo": "now/d",
+	      "fieldConfig": {
+	        "defaults": {
+	          "color": {
+	            "mode": "thresholds"
+	          },
+	          "custom": {
+	            "align": "auto",
+	            "cellOptions": {
+	              "type": "auto"
+	            },
+	            "inspect": false
+	          },
+	          "mappings": [],
+	          "thresholds": {
+	            "mode": "absolute",
+	            "steps": [
+	              {
+	                "color": "green",
+	                "value": null
+	              },
+	              {
+	                "color": "red",
+	                "value": 1
+	              }
+	            ]
+	          }
+	        },
+	        "overrides": [
+	          {
+	            "matcher": {
+	              "id": "byName",
+	              "options": "Account"
+	            },
+	            "properties": [
+	              {
+	                "id": "custom.cellOptions",
+	                "value": {
+	                  "type": "color-text"
+	                }
+	              },
+	              {
+	                "id": "mappings",
+	                "value": [
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^free::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#71717a"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^plus::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#1d4ed8"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^pro::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#6d28d9"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^unknown::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#a1a1aa"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^[^:]+::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#71717a"
+	                      }
+	                    }
+	                  }
+	                ]
+	              }
+	            ]
+	          },
+	          {
+	            "matcher": {
+	              "id": "byName",
+	              "options": "Cost (USD, 30d total)"
+	            },
+	            "properties": [
+	              {
+	                "id": "unit",
+	                "value": "currencyUSD"
+	              },
+	              {
+	                "id": "decimals",
+	                "value": 2
+	              },
+	              {
+	                "id": "color",
+	                "value": {
+	                  "mode": "continuous-GrYlRd"
+	                }
+	              },
+	              {
+	                "id": "custom.cellOptions",
+	                "value": {
+	                  "type": "gauge",
+	                  "mode": "gradient"
+	                }
+	              }
+	            ]
+	          }
+	        ]
+	      },
+	      "options": {
+	        "showHeader": true,
+	        "cellHeight": "sm",
+	        "sortBy": [
+	          {
+	            "displayName": "Cost (USD, 30d total)",
+	            "desc": true
+	          }
+	        ]
+	      },
+	      "transformations": [
+	        {
+	          "id": "labelsToFields",
+	          "options": {}
+	        },
+	        {
+	          "id": "organize",
+	          "options": {
+	            "excludeByName": {
+	              "Time": true,
+	              "account_id": true
+	            },
+	            "renameByName": {
+	              "account_display": "Account",
+	              "Value": "Cost (USD, 30d total)"
+	            },
+	            "indexByName": {
+	              "Account": 0,
+	              "Cost (USD, 30d total)": 1
+	            }
+	          }
+	        }
+	      ],
+	      "targets": [
+	        {
+	          "refId": "A",
+	          "instant": true,
+	          "format": "table",
+	          "expr": "max by (account_id, account_display) (label_join((topk(20, sum by (account_id) (increase(codex_lb_proxy_account_cost_usd_total{account_id=~\"$account\",api=~\"$api\"}[30d]))) * on(account_id) group_left(display, plan_type) (0 * (codex_lb_account_identity or on(account_id) label_replace(label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\"), \"plan_type\", \"unknown\", \"account_id\", \"(.*)\")) + 1)), \"account_display\", \"::\", \"plan_type\", \"display\"))"
+	        }
+	      ]
+	    },
+		    {
+		      "id": 40,
+		      "type": "table",
+		      "title": "Requests (30d total, top 20 accounts)",
+		      "description": "Top 20 accounts by total requests over the last 30 completed days. Account text is colored by plan type; the value bar is value-colored.",
+		      "gridPos": {
+		        "x": 12,
+		        "y": 110,
+		        "w": 12,
+		        "h": 14
+		      },
+	      "hideTimeOverride": true,
+	      "timeFrom": "now-30d/d",
+	      "timeTo": "now/d",
+	      "fieldConfig": {
+	        "defaults": {
+	          "color": {
+	            "mode": "thresholds"
+	          },
+	          "custom": {
+	            "align": "auto",
+	            "cellOptions": {
+	              "type": "auto"
+	            },
+	            "inspect": false
+	          },
+	          "mappings": [],
+	          "thresholds": {
+	            "mode": "absolute",
+	            "steps": [
+	              {
+	                "color": "green",
+	                "value": null
+	              },
+	              {
+	                "color": "red",
+	                "value": 1
+	              }
+	            ]
+	          }
+	        },
+	        "overrides": [
+	          {
+	            "matcher": {
+	              "id": "byName",
+	              "options": "Account"
+	            },
+	            "properties": [
+	              {
+	                "id": "custom.cellOptions",
+	                "value": {
+	                  "type": "color-text"
+	                }
+	              },
+	              {
+	                "id": "mappings",
+	                "value": [
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^free::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#71717a"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^plus::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#1d4ed8"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^pro::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#6d28d9"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^unknown::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#a1a1aa"
+	                      }
+	                    }
+	                  },
+	                  {
+	                    "type": "regex",
+	                    "options": {
+	                      "pattern": "^[^:]+::(.*)$",
+	                      "result": {
+	                        "text": "$1",
+	                        "color": "#71717a"
+	                      }
+	                    }
+	                  }
+	                ]
+	              }
+	            ]
+	          },
+	          {
+	            "matcher": {
+	              "id": "byName",
+	              "options": "Requests (30d total)"
+	            },
+	            "properties": [
+	              {
+	                "id": "unit",
+	                "value": "short"
+	              },
+	              {
+	                "id": "decimals",
+	                "value": 0
+	              },
+	              {
+	                "id": "color",
+	                "value": {
+	                  "mode": "continuous-GrYlRd"
+	                }
+	              },
+	              {
+	                "id": "custom.cellOptions",
+	                "value": {
+	                  "type": "gauge",
+	                  "mode": "gradient"
+	                }
+	              }
+	            ]
+	          }
+	        ]
+	      },
+	      "options": {
+	        "showHeader": true,
+	        "cellHeight": "sm",
+	        "sortBy": [
+	          {
+	            "displayName": "Requests (30d total)",
+	            "desc": true
+	          }
+	        ]
+	      },
+	      "transformations": [
+	        {
+	          "id": "labelsToFields",
+	          "options": {}
+	        },
+	        {
+	          "id": "organize",
+	          "options": {
+	            "excludeByName": {
+	              "Time": true,
+	              "account_id": true
+	            },
+	            "renameByName": {
+	              "account_display": "Account",
+	              "Value": "Requests (30d total)"
+	            },
+	            "indexByName": {
+	              "Account": 0,
+	              "Requests (30d total)": 1
+	            }
+	          }
+	        }
+	      ],
+	      "targets": [
+	        {
+	          "refId": "A",
+	          "instant": true,
+	          "format": "table",
+	          "expr": "max by (account_id, account_display) (label_join((topk(20, sum by (account_id) (increase(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[30d]))) * on(account_id) group_left(display, plan_type) (0 * (codex_lb_account_identity or on(account_id) label_replace(label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\"), \"plan_type\", \"unknown\", \"account_id\", \"(.*)\")) + 1)), \"account_display\", \"::\", \"plan_type\", \"display\"))"
+	        }
 	      ]
 	    },
 		    {
@@ -910,66 +1730,116 @@
 		      "title": "Today so far (since midnight, browser TZ)",
 		      "gridPos": {
 		        "x": 0,
-		        "y": 96,
+		        "y": 124,
 		        "w": 24,
 		        "h": 1
 		      },
       "collapsed": false,
       "panels": []
     },
-		    {
-		      "id": 33,
-		      "type": "stat",
-		      "title": "Cost today so far (USD)",
-		      "gridPos": {
-		        "x": 0,
-		        "y": 97,
-		        "w": 12,
-		        "h": 6
-		      },
-      "options": {
-        "graphMode": "none"
-      },
+			    {
+			      "id": 33,
+			      "type": "stat",
+			      "title": "Cost today so far (USD)",
+			      "gridPos": {
+			        "x": 0,
+			        "y": 125,
+			        "w": 6,
+			        "h": 6
+			      },
+	      "options": {
+	        "graphMode": "none"
+	      },
       "hideTimeOverride": true,
       "timeFrom": "now/d",
       "targets": [
         {
           "refId": "A",
           "instant": true,
-          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__range]))"
+	          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__range]))"
         }
-      ]
-    },
-		    {
-		      "id": 34,
-		      "type": "stat",
-		      "title": "Requests today so far",
-		      "gridPos": {
-		        "x": 12,
-		        "y": 97,
-		        "w": 12,
-		        "h": 6
-		      },
-      "options": {
-        "graphMode": "none"
-      },
+	      ]
+	    },
+				    {
+				      "id": 37,
+				      "type": "stat",
+				      "title": "Cost yesterday (USD)",
+				      "description": "Matches the rightmost completed-day bar in the Cost/day panel.",
+				      "gridPos": {
+				        "x": 6,
+				        "y": 125,
+				        "w": 6,
+			        "h": 6
+			      },
+	      "options": {
+	        "graphMode": "none"
+	      },
+	      "hideTimeOverride": true,
+		      "timeFrom": "now-2d/d",
+		      "timeTo": "now/d",
+		      "targets": [
+		        {
+		          "refId": "A",
+		          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1d]))",
+		          "interval": "1d"
+		        }
+		      ]
+		    },
+			    {
+			      "id": 34,
+			      "type": "stat",
+			      "title": "Requests today so far",
+			      "gridPos": {
+			        "x": 12,
+			        "y": 125,
+			        "w": 6,
+			        "h": 6
+			      },
+	      "options": {
+	        "graphMode": "none"
+	      },
       "hideTimeOverride": true,
       "timeFrom": "now/d",
       "targets": [
         {
           "refId": "A",
           "instant": true,
-          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[$__range]))"
+	          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[$__range]))"
         }
-      ]
-    },
-		    {
-		      "id": 35,
-		      "type": "timeseries",
-		      "title": "Cost/hr (USD, total, 1h buckets)",
+	      ]
+	    },
+				    {
+				      "id": 38,
+				      "type": "stat",
+				      "title": "Requests yesterday",
+				      "description": "Matches the rightmost completed-day bar in the Requests/day panel.",
+				      "gridPos": {
+				        "x": 18,
+				        "y": 125,
+				        "w": 6,
+			        "h": 6
+			      },
+	      "options": {
+	        "graphMode": "none"
+	      },
+	      "hideTimeOverride": true,
+		      "timeFrom": "now-2d/d",
+		      "timeTo": "now/d",
+		      "targets": [
+		        {
+		          "refId": "A",
+		          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1d]))",
+		          "interval": "1d"
+		        }
+		      ]
+		    },
+			    {
+			      "id": 35,
+			      "type": "timeseries",
+			      "title": "Cost/hr (USD, total, 1h buckets)",
 		      "gridPos": {
 		        "x": 0,
-		        "y": 103,
+		        "y": 131,
 		        "w": 24,
 		        "h": 7
 		      },
@@ -990,7 +1860,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h]))",
+	          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h]))",
           "interval": "1h"
         }
       ]
