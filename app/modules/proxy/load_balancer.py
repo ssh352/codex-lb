@@ -935,7 +935,16 @@ def _state_from_account(
     secondary_reset = secondary_entry.reset_at if secondary_entry else None
 
     db_reset_at = float(account.reset_at) if account.reset_at else None
-    effective_runtime_reset = runtime.reset_at or db_reset_at
+    runtime_reset_at = runtime.reset_at
+    now = time.time()
+    if runtime_reset_at is not None and runtime_reset_at <= now:
+        runtime.reset_at = None
+        runtime_reset_at = None
+
+    if runtime_reset_at is not None and db_reset_at is not None:
+        effective_runtime_reset = max(runtime_reset_at, db_reset_at)
+    else:
+        effective_runtime_reset = runtime_reset_at if runtime_reset_at is not None else db_reset_at
 
     status, used_percent, reset_at = apply_usage_quota(
         status=account.status,
