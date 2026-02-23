@@ -160,7 +160,9 @@
 	]);
 
 	const ROUTING_LABELS = {
-		waste_pressure: "waste pressure",
+		hybrid: "hybrid",
+		// Legacy key retained for older payloads.
+		waste_pressure: "hybrid",
 		usage_weighted: "usage weighted",
 		round_robin: "round robin",
 		sticky: "sticky",
@@ -262,7 +264,7 @@
 	const createEmptyDashboardData = () => ({
 		lastSyncAt: "",
 		routing: {
-			strategy: "waste_pressure",
+			strategy: "hybrid",
 		},
 		metrics: {
 			requests7d: 0,
@@ -889,7 +891,7 @@
 		return {
 			lastSyncAt: lastSyncAt || new Date().toISOString(),
 			routing: {
-				strategy: "waste_pressure",
+				strategy: "hybrid",
 			},
 			metrics: {
 				requests7d,

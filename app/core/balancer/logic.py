@@ -22,8 +22,8 @@ _USAGE_LIMIT_REACHED_ESCALATE_AFTER_ERRORS = 3
 _SECONDARY_RESET_UNKNOWN_SORT_VALUE = 2**63 - 1
 _TIER_WEIGHTS: dict[str, float] = {
     "pro": 1.0,
-    "plus": 0.95,
-    "free": 0.90,
+    "plus": 0.72,
+    "free": 0.512,
 }
 _DEFAULT_TIER = "plus"
 _PLUS_EQUIVALENT_PLAN_TYPES = {"plus", "team", "business"}
@@ -111,6 +111,17 @@ def select_account(
             backoff = min(300, 30 * (2 ** (state.error_count - 3)))
             if state.last_error_at and current - state.last_error_at < backoff:
                 continue
+        # Secondary (weekly) exhaustion guard:
+        # If the usage snapshot indicates the secondary window is exhausted, the account is
+        # effectively unusable until the secondary reset boundary passes, even if persisted
+        # status is still ACTIVE.
+        if (
+            state.secondary_used_percent is not None
+            and float(state.secondary_used_percent) >= 100.0
+            and state.secondary_reset_at is not None
+            and current < float(state.secondary_reset_at)
+        ):
+            continue
         available.append(state)
 
     if not available:
@@ -141,19 +152,10 @@ def select_account(
             return SelectionResult(None, f"Rate limit exceeded. Try again in {wait_seconds:.0f}s", "cooldown")
         return SelectionResult(None, "No available accounts", "no_available")
 
-    def _usage_sort_key(state: AccountState) -> tuple[float, float, float, str]:
-        primary_used = state.used_percent if state.used_percent is not None else 0.0
-        secondary_used = state.secondary_used_percent if state.secondary_used_percent is not None else primary_used
-        # Prefer accounts that were selected less recently (helps spread work across similarly-scored accounts).
-        last_selected = state.last_selected_at or 0.0
-        return secondary_used, primary_used, last_selected, state.account_id
-
     @dataclass(slots=True)
     class _TierAggregate:
         tier: str
-        urgency: float = 0.0
         min_reset_at: int | None = None
-        remaining_credits: float = 0.0
         account_count: int = 0
 
     def _normalize_tier(plan_type: str | None) -> str:
@@ -173,21 +175,16 @@ def select_account(
             return float(state.used_percent)
         return 0.0
 
-    def _secondary_remaining_credits(state: AccountState) -> float:
-        if state.secondary_capacity_credits is None:
-            return 0.0
-        capacity = float(state.secondary_capacity_credits)
-        used_percent = _secondary_used_percent(state)
-        return capacity * max(0.0, 100.0 - used_percent) / 100.0
+    def _tier_weight(tier: str) -> float:
+        return float(_TIER_WEIGHTS.get(tier, 1.0))
 
-    def _required_rate(state: AccountState) -> float:
+    def _selection_score(state: AccountState) -> float:
+        tier = _normalize_tier(state.plan_type)
+        weight = _tier_weight(tier)
         if state.secondary_reset_at is None:
             return 0.0
-        remaining = _secondary_remaining_credits(state)
-        if remaining <= 0.0:
-            return 0.0
         time_to_reset = max(60.0, float(state.secondary_reset_at) - current)
-        return remaining / time_to_reset
+        return weight / time_to_reset
 
     aggregates: dict[str, _TierAggregate] = {}
     for state in available:
@@ -198,62 +195,42 @@ def select_account(
             aggregates[tier] = aggregate
 
         aggregate.account_count += 1
-        aggregate.urgency += _required_rate(state)
         if state.secondary_reset_at is not None:
             if aggregate.min_reset_at is None or state.secondary_reset_at < aggregate.min_reset_at:
                 aggregate.min_reset_at = int(state.secondary_reset_at)
-            aggregate.remaining_credits += _secondary_remaining_credits(state)
 
     tier_scores = tuple(
         TierScore(
             tier=tier,
-            urgency=float(aggregate.urgency),
-            weight=float(_TIER_WEIGHTS.get(tier, 1.0)),
-            score=float(aggregate.urgency * _TIER_WEIGHTS.get(tier, 1.0)),
+            urgency=(
+                0.0
+                if aggregate.min_reset_at is None
+                else float(1.0 / max(60.0, float(aggregate.min_reset_at) - current))
+            ),
+            weight=_tier_weight(tier),
+            score=(
+                0.0
+                if aggregate.min_reset_at is None
+                else float(_tier_weight(tier) / max(60.0, float(aggregate.min_reset_at) - current))
+            ),
             min_reset_at=aggregate.min_reset_at,
-            remaining_credits=float(aggregate.remaining_credits),
+            remaining_credits=0.0,
             account_count=aggregate.account_count,
         )
         for tier, aggregate in sorted(aggregates.items(), key=lambda item: item[0])
     )
 
-    if not tier_scores or all(score.score <= 0.0 for score in tier_scores):
-        selected = min(available, key=_usage_sort_key)
-        selected_secondary = (
-            float(selected.secondary_used_percent)
-            if selected.secondary_used_percent is not None
-            else (float(selected.used_percent) if selected.used_percent is not None else None)
-        )
-        selected_primary = float(selected.used_percent) if selected.used_percent is not None else None
-        return SelectionResult(
-            selected,
-            None,
-            None,
-            SelectionTrace(
-                selected_tier=None,
-                tier_scores=tier_scores,
-                selected_secondary_reset_at=selected.secondary_reset_at,
-                selected_secondary_used_percent=selected_secondary,
-                selected_primary_used_percent=selected_primary,
-            ),
-        )
-
-    def _tier_pick_key(score: TierScore) -> tuple[float, int, float, str]:
-        reset_at = score.min_reset_at if score.min_reset_at is not None else _SECONDARY_RESET_UNKNOWN_SORT_VALUE
-        return -score.score, int(reset_at), -score.remaining_credits, score.tier
-
-    selected_tier = min(tier_scores, key=_tier_pick_key).tier
-    candidates = [state for state in available if _normalize_tier(state.plan_type) == selected_tier]
-
-    def _intra_tier_key(state: AccountState) -> tuple[int, float, float, str]:
+    def _selection_key(state: AccountState) -> tuple[float, int, float, str]:
+        score = float(_selection_score(state))
+        tier = _normalize_tier(state.plan_type)
+        weight = _tier_weight(tier)
         reset_at = (
             state.secondary_reset_at if state.secondary_reset_at is not None else _SECONDARY_RESET_UNKNOWN_SORT_VALUE
         )
-        secondary_used = _secondary_used_percent(state)
-        last_selected = state.last_selected_at or 0.0
-        return int(reset_at), secondary_used, last_selected, state.account_id
+        return -score, int(reset_at), -weight, state.account_id
 
-    selected = min(candidates, key=_intra_tier_key)
+    selected = min(available, key=_selection_key)
+    selected_tier = _normalize_tier(selected.plan_type)
     selected_secondary = (
         float(selected.secondary_used_percent)
         if selected.secondary_used_percent is not None

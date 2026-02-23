@@ -16,17 +16,18 @@ from app.db.models import AccountStatus
 pytestmark = pytest.mark.unit
 
 
-def test_select_account_picks_lowest_used_percent():
+def test_select_account_picks_earliest_secondary_reset_within_tier():
+    now = 1_700_000_000.0
     states = [
-        AccountState("a", AccountStatus.ACTIVE, used_percent=50.0),
-        AccountState("b", AccountStatus.ACTIVE, used_percent=10.0),
+        AccountState("later", AccountStatus.ACTIVE, plan_type="plus", secondary_reset_at=int(now + 3600)),
+        AccountState("earlier", AccountStatus.ACTIVE, plan_type="plus", secondary_reset_at=int(now + 600)),
     ]
-    result = select_account(states)
+    result = select_account(states, now=now)
     assert result.account is not None
-    assert result.account.account_id == "b"
+    assert result.account.account_id == "earlier"
 
 
-def test_select_account_within_tier_uses_strict_earliest_secondary_reset():
+def test_select_account_within_tier_prefers_earliest_secondary_reset_ignoring_usage():
     now = 1_700_000_000.0
     states = [
         AccountState(
@@ -51,16 +52,15 @@ def test_select_account_within_tier_uses_strict_earliest_secondary_reset():
     assert result.account.account_id == "earlier"
 
 
-def test_select_account_cross_tier_prefers_weighted_urgency():
+def test_select_account_cross_tier_prefers_plus_when_free_not_early_enough():
     now = 1_700_000_000.0
     states = [
         AccountState(
-            "free_early",
+            "free_somewhat_early",
             AccountStatus.ACTIVE,
             plan_type="free",
-            secondary_used_percent=99.0,
-            secondary_reset_at=int(now + 3600),
-            secondary_capacity_credits=1000.0,
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 6000),
         ),
         AccountState(
             "plus_later",
@@ -68,12 +68,87 @@ def test_select_account_cross_tier_prefers_weighted_urgency():
             plan_type="plus",
             secondary_used_percent=0.0,
             secondary_reset_at=int(now + 7200),
-            secondary_capacity_credits=1000.0,
         ),
     ]
     result = select_account(states, now=now)
     assert result.account is not None
     assert result.account.account_id == "plus_later"
+
+
+def test_select_account_cross_tier_prefers_more_urgent_free_when_plus_far_from_reset():
+    now = 1_700_000_000.0
+    states = [
+        AccountState(
+            "free_soon",
+            AccountStatus.ACTIVE,
+            plan_type="free",
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=1000.0,
+        ),
+        AccountState(
+            "plus_far",
+            AccountStatus.ACTIVE,
+            plan_type="plus",
+            secondary_used_percent=0.0,
+            secondary_reset_at=int(now + 7 * 24 * 60 * 60),
+            secondary_capacity_credits=1000.0,
+        ),
+    ]
+    result = select_account(states, now=now)
+    assert result.account is not None
+    assert result.account.account_id == "free_soon"
+
+
+def test_select_account_cross_tier_does_not_starve_plus_by_free_count():
+    now = 1_700_000_000.0
+    free_states = [
+        AccountState(
+            f"free_{i}",
+            AccountStatus.ACTIVE,
+            plan_type="free",
+            secondary_used_percent=99.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=1000.0,
+        )
+        for i in range(50)
+    ]
+    plus_state = AccountState(
+        "plus_urgent",
+        AccountStatus.ACTIVE,
+        plan_type="plus",
+        secondary_used_percent=0.0,
+        secondary_reset_at=int(now + 3600),
+        secondary_capacity_credits=1000.0,
+    )
+    result = select_account([plus_state, *free_states], now=now)
+    assert result.account is not None
+    assert result.account.account_id == "plus_urgent"
+
+
+def test_select_account_skips_secondary_exhausted_until_secondary_reset():
+    now = 1_700_000_000.0
+    states = [
+        AccountState(
+            "exhausted_earlier_reset",
+            AccountStatus.ACTIVE,
+            plan_type="plus",
+            secondary_used_percent=100.0,
+            secondary_reset_at=int(now + 600),
+            secondary_capacity_credits=1000.0,
+        ),
+        AccountState(
+            "available_later_reset",
+            AccountStatus.ACTIVE,
+            plan_type="plus",
+            secondary_used_percent=50.0,
+            secondary_reset_at=int(now + 3600),
+            secondary_capacity_credits=1000.0,
+        ),
+    ]
+    result = select_account(states, now=now)
+    assert result.account is not None
+    assert result.account.account_id == "available_later_reset"
 
 
 def test_select_account_cross_tier_applies_latency_weight_on_close_urgency():
@@ -126,22 +201,22 @@ def test_select_account_prefers_known_reset_inside_selected_tier():
     assert result.account.account_id == "known_reset"
 
 
-def test_select_account_falls_back_to_usage_sort_when_all_tier_scores_unknown():
+def test_select_account_falls_back_to_tier_weight_when_all_secondary_resets_unknown():
     now = 1_700_000_000.0
     states = [
         AccountState(
-            "higher_used",
+            "free",
             AccountStatus.ACTIVE,
-            plan_type="plus",
+            plan_type="free",
             used_percent=70.0,
             secondary_used_percent=70.0,
             secondary_reset_at=None,
             secondary_capacity_credits=None,
         ),
         AccountState(
-            "lower_used",
+            "plus",
             AccountStatus.ACTIVE,
-            plan_type="free",
+            plan_type="plus",
             used_percent=10.0,
             secondary_used_percent=10.0,
             secondary_reset_at=None,
@@ -150,7 +225,7 @@ def test_select_account_falls_back_to_usage_sort_when_all_tier_scores_unknown():
     ]
     result = select_account(states, now=now)
     assert result.account is not None
-    assert result.account.account_id == "lower_used"
+    assert result.account.account_id == "plus"
 
 
 def test_select_account_emits_tier_trace_fields():

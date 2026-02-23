@@ -22,32 +22,28 @@ accounts, without pausing/resuming every other account.
 When multiple accounts are pinned, routing is **not** round-robin.
 
 - The proxy first filters eligible candidates to only pinned accounts.
-- It then applies the existing **hybrid** selector to that subset:
-  - choose a plan-type tier by urgency (`sum(remaining_secondary_credits / time_to_reset)`) multiplied by a mild
-    latency weight (`pro=1.00`, `plus=0.95`, `free=0.90`)
-  - then choose an account within that tier using strict earliest secondary reset first (ERF)
-- The selector includes a “last selected” tie-break, which tends to spread traffic across similarly-scored accounts.
+- It then ranks eligible accounts using a reset-first, tier-weighted score:
+  - if `secondary_reset_at` is known: `score = tier_weight / max(60, secondary_reset_at - now)`
+  - if `secondary_reset_at` is unknown: `score = 0`
+  - `tier_weight` defaults to `pro=1.00`, `plus=0.72`, `free=0.512` (latency + quality preference)
+- Selection is deterministic (stable tie-breaks) and, within a tier, behaves as strict “earliest secondary reset first”.
 - Stickiness can still keep a given `prompt_cache_key` on the same pinned account until a retry reallocates it (or the
   pinned account becomes ineligible). It does not proactively migrate just because another account later has higher
   selector score.
 - Stickiness never overrides the routing pool: if a sticky mapping points to an unpinned account while the pool is
   active, the proxy drops that mapping and reassigns the key within the pinned pool.
 
-### Why hybrid (not pure “earliest reset first” globally)
+### Why tier-weighted reset-first (not waste-pressure)
 
-Global “earliest secondary reset first” is intuitive but deadline-only. It can under-utilize tiers with larger
-remaining balances that reset slightly later, and it still interacts poorly with sticky routing:
+Operators often reason about accounts in terms of their next secondary reset boundary ("which one resets first?").
+This selector makes that the primary signal, while still expressing a preference for higher tiers across the pool.
 
-- If a `prompt_cache_key` is assigned to an account that resets soon, that account will often reset **before** it ever
-  becomes unavailable (it becomes *more* usable after reset).
-- Because stickiness is honored as long as the pinned account remains eligible, the proxy will keep sending that
-  key to the same account after its reset, instead of migrating to other accounts whose secondary credits are still in
-  the pre-reset window.
-- The result can be avoidable waste: other accounts’ secondary windows can expire with large unused balances simply
-  because the sticky traffic never moved.
+Compared to waste-pressure (`remaining_secondary_credits / time_to_reset`), reset-first has simpler behavior and makes
+same-tier selection intuitive. The tradeoff is that it can leave secondary credits unused at reset boundaries, because
+remaining balance is not part of the ranking.
 
-The hybrid selector keeps the intuitive ERF rule **within the chosen tier**, while using cross-tier urgency plus
-latency weighting to avoid starving higher-impact remaining balances.
+Tier weights encode a product preference (latency + probable response-quality advantage) without needing per-request
+token/cost prediction.
 
 ## Failure Modes
 

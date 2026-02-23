@@ -110,8 +110,8 @@ class Settings(BaseSettings):
     # (rate limit/quota/permanent failure), so even with a higher TTL it can react quickly to
     # request-observed failures.
     proxy_snapshot_ttl_seconds: float = Field(default=10.0, gt=0)
-    # Proxy account selection strategy:
-    # Waste-pressure account selection is always enabled. The legacy strategy toggle was removed.
+    # Proxy account selection algorithm:
+    # Tier-aware hybrid account selection is always enabled. The legacy strategy toggle was removed.
     http_client_connector_limit: int = Field(default=256, gt=0)
     http_client_connector_limit_per_host: int = Field(default=0, ge=0)
     http_client_keepalive_timeout_seconds: float = Field(default=30.0, gt=0)
