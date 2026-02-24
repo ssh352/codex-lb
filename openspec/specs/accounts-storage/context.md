@@ -20,6 +20,19 @@ Roaming can be done by storing `accounts.db` and `encryption.key` on a synced pa
 
 Concurrent use is best handled by running a single `codex-lb` instance as the authority and having other machines connect to it (see below). This avoids OAuth refresh-token rotation races.
 
+Example `.env.local` (iCloud Drive on macOS):
+
+```bash
+CODEX_LB_ACCOUNTS_DATABASE_URL="sqlite+aiosqlite:///~/Library/Mobile Documents/com~apple~CloudDocs/codex-lb/accounts.db"
+CODEX_LB_ENCRYPTION_KEY_FILE="~/Library/Mobile Documents/com~apple~CloudDocs/codex-lb/encryption.key"
+```
+
+Operational guidance for roaming:
+
+- Stop `codex-lb` on machine A.
+- Wait for your sync tool to finish uploading/downloading both `accounts.db` and `encryption.key`.
+- Start `codex-lb` on machine B.
+
 ### Failure mode: refresh-token rotation races
 
 OpenAI refresh tokens are typically rotated/invalidated on refresh. If two independent `codex-lb` instances attempt to refresh the same account (even infrequently), one instance can end up using a stale refresh token and trigger errors like `refresh_token_reused`, forcing re-authentication.

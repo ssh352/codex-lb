@@ -98,7 +98,9 @@ def _build_engine(url: str, *, enable_wal: bool | None = None) -> AsyncEngine:
 engine = _build_engine(_MAIN_DATABASE_URL)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
-# accounts.db is low-churn and may be placed on a synced path for roaming credentials across machines.
+# accounts.db is low-churn and may be placed on a synced path (e.g. iCloud Drive) for roaming credentials
+# across machines. This is not for concurrent use: only one codex-lb instance should write the synced
+# accounts DB at a time, and the encryption key file should roam with it.
 # Rollback journaling (DELETE) avoids the WAL/SHM sidecar files that can desynchronize under file-sync tools.
 accounts_engine = _build_engine(_ACCOUNTS_DATABASE_URL, enable_wal=False)
 AccountsSessionLocal = async_sessionmaker(accounts_engine, expire_on_commit=False, class_=AsyncSession)

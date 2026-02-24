@@ -9,6 +9,8 @@ from app.core.config.settings import get_settings
 
 
 def _get_or_create_key(key_file: Path) -> bytes:
+    # The encryption key must remain stable to decrypt previously stored tokens. If you roam `accounts.db`
+    # between machines via a synced path, roam this key file alongside it.
     key_file.parent.mkdir(parents=True, exist_ok=True)
     if key_file.exists():
         return key_file.read_bytes()

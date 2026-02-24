@@ -149,7 +149,7 @@ Files:
 - `store.db` – usage history, request logs, settings
 - `encryption.key` – encrypts tokens (auto-generated)
 
-To preserve authenticated accounts across machines, back up `accounts.db` and `encryption.key` (and optionally `store.db` if you want usage history/logs).
+To preserve authenticated accounts across machines, back up `accounts.db` and `encryption.key` (and optionally `store.db` if you want usage history/logs). If you want to “roam” accounts between machines via a synced path (iCloud/Dropbox), keep `accounts.db` and `encryption.key` together and point each machine at both files.
 
 ### Using Codex from multiple machines at the same time (recommended)
 
@@ -184,7 +184,17 @@ Notes:
 ### Roaming `accounts.db` via iCloud/Dropbox (not for concurrent use)
 
 If you put `accounts.db` on a synced path to “roam” accounts between machines, treat it as
-best-effort backup/roaming. Do not run multiple `codex-lb` instances against the same synced DB.
+best-effort backup/roaming. Keep `encryption.key` with it (it encrypts/decrypts tokens) and point both
+machines at the same files. Do not run multiple `codex-lb` instances against the same synced DB.
+
+Example `.env.local` (iCloud Drive on macOS):
+
+```bash
+CODEX_LB_ACCOUNTS_DATABASE_URL="sqlite+aiosqlite:///~/Library/Mobile Documents/com~apple~CloudDocs/codex-lb/accounts.db"
+CODEX_LB_ENCRYPTION_KEY_FILE="~/Library/Mobile Documents/com~apple~CloudDocs/codex-lb/encryption.key"
+```
+
+Leave `store.db` local per machine (it is append-heavy and not intended for syncing).
 
 SQLite WAL uses `-wal`/`-shm` sidecar files, and file-sync tools are not a concurrency-safe database
 transport for those sidecars. For this reason, `accounts.db` uses rollback journaling (`DELETE`) to
