@@ -46,3 +46,4 @@ app/static/components
 .bench/
 errors
 error2
+*.svg
