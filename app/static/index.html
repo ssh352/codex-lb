@@ -400,21 +400,26 @@
         <article role="tabpanel" id="tab-accounts" :hidden="view !== 'accounts'">
 	          <div class="two-column">
 	            <div class="panel account-list-panel">
-	              <h3>Account list</h3>
-	              <div class="list-actions">
-                <div class="searchbox">
-                  <input type="search" placeholder="Search accounts" aria-label="Search accounts" x-ref="accountSearch"
-                    x-model="accounts.searchQuery" @keydown.escape.prevent="clearAccountSearch">
-                  <button type="button" aria-label="search" title="Search accounts"
-                    @click="focusAccountSearch"></button>
-                </div>
-                <label role="button" :class="{ 'is-disabled': importState.isLoading }" @click="logImportClick('label')">
-                  <input type="file" class="file-input" accept="application/json" @click="logImportClick('input')"
-                    @change="handleAuthImport($event)" :disabled="importState.isLoading">
-                  Import auth.json
-                </label>
-	                <button type="button" @click="openAddAccountDialog">Add account</button>
-	              </div>
+		              <h3>Account list</h3>
+		              <div class="list-actions">
+	                <div class="searchbox">
+	                  <input type="search" placeholder="Search accounts" aria-label="Search accounts" x-ref="accountSearch"
+	                    x-model="accounts.searchQuery" @keydown.escape.prevent="clearAccountSearch">
+	                  <button type="button" aria-label="search" title="Search accounts"
+	                    @click="focusAccountSearch"></button>
+	                </div>
+	                <button type="button" class="filter-toggle" :class="{ 'is-active': accounts.pinnedOnly }"
+	                  :aria-pressed="accounts.pinnedOnly" @click="togglePinnedOnlyAccounts"
+	                  :title="accounts.pinnedOnly ? 'Showing pinned accounts only' : 'Show pinned accounts only'">
+	                  <span x-text="`Pinned only (${pinnedAccountsCount})`"></span>
+	                </button>
+	                <label role="button" :class="{ 'is-disabled': importState.isLoading }" @click="logImportClick('label')">
+	                  <input type="file" class="file-input" accept="application/json" @click="logImportClick('input')"
+	                    @change="handleAuthImport($event)" :disabled="importState.isLoading">
+	                  Import auth.json
+	                </label>
+		                <button type="button" @click="openAddAccountDialog">Add account</button>
+		              </div>
 	              <div class="bulk-actions" x-show="selectedAccountIds.length > 0" x-transition.opacity>
 	                <div class="text-muted" x-text="`${selectedAccountIds.length} selected`"></div>
 	                <div class="inline-actions">
@@ -508,14 +513,14 @@
                         <td style="text-align: center" x-text="formatQuotaResetLabel(account.resetAtSecondary)"></td>
                       </tr>
                     </template>
-	                    <template x-if="filteredAccounts.length === 0">
-	                      <tr>
-	                        <td colspan="8" class="text-muted" style="text-align: center">
-	                          <span
-	                            x-text="accounts.searchQuery ? 'No accounts match your search.' : 'No accounts available.'"></span>
-	                        </td>
-	                      </tr>
-	                    </template>
+		                    <template x-if="filteredAccounts.length === 0">
+		                      <tr>
+		                        <td colspan="8" class="text-muted" style="text-align: center">
+		                          <span
+		                            x-text="accounts.pinnedOnly ? (accounts.searchQuery ? 'No pinned accounts match your search.' : 'No pinned accounts.') : (accounts.searchQuery ? 'No accounts match your search.' : 'No accounts available.')"></span>
+		                        </td>
+		                      </tr>
+		                    </template>
                   </tbody>
                 </table>
               </div>

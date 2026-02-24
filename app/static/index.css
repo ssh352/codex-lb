@@ -1212,6 +1212,27 @@ input:focus {
   margin-bottom: 16px;
 }
 
+.list-actions button.filter-toggle {
+  background: var(--bg-surface);
+  color: var(--text-main);
+  border: 1px solid var(--border-strong);
+}
+
+.list-actions button.filter-toggle:hover {
+  background: var(--bg-list-hover);
+}
+
+.list-actions button.filter-toggle.is-active {
+  background: var(--accent-primary);
+  color: var(--accent-primary-text);
+  border-color: var(--accent-primary);
+}
+
+.list-actions button.filter-toggle.is-active:hover {
+  background: var(--accent-primary-hover);
+  border-color: var(--accent-primary-hover);
+}
+
 .searchbox {
   flex: 1;
   max-width: 320px;

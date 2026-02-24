@@ -1700,14 +1700,17 @@
 				this.$watch("authDialog.open", () => {
 					this.syncAutoRefresh();
 				});
-				this.$watch("accounts.searchQuery", () => {
-					this.syncAccountSearchSelection();
-				});
-				window.addEventListener("visibilitychange", () => {
-					this.syncAutoRefresh();
-					if (document.visibilityState === "visible") {
-						this.refreshAll({ silent: true }).catch((error) => {
-							console.warn("[auto-refresh] refresh failed", error);
+					this.$watch("accounts.searchQuery", () => {
+						this.syncAccountSearchSelection();
+					});
+					this.$watch("accounts.pinnedOnly", () => {
+						this.syncAccountSearchSelection();
+					});
+					window.addEventListener("visibilitychange", () => {
+						this.syncAutoRefresh();
+						if (document.visibilityState === "visible") {
+							this.refreshAll({ silent: true }).catch((error) => {
+								console.warn("[auto-refresh] refresh failed", error);
 						});
 					}
 				});
@@ -2091,21 +2094,26 @@
 			focusAccountSearch() {
 				this.$refs.accountSearch?.focus();
 			},
-			clearAccountSearch() {
-				this.accounts.searchQuery = "";
-				this.focusAccountSearch();
-			},
-			syncAccountSearchSelection() {
-				const query = normalizeSearchInput(this.accounts.searchQuery);
-				if (!query) {
-					return;
-				}
-				const filtered = filterAccountsByQuery(this.accounts.rows, query);
-				if (!filtered.length) {
-					return;
-				}
-				const hasSelected = filtered.some(
-					(account) => account.id === this.accounts.selectedId,
+				clearAccountSearch() {
+					this.accounts.searchQuery = "";
+					this.focusAccountSearch();
+				},
+				togglePinnedOnlyAccounts() {
+					this.accounts.pinnedOnly = !this.accounts.pinnedOnly;
+				},
+				syncAccountSearchSelection() {
+					const query = normalizeSearchInput(this.accounts.searchQuery);
+					const searched = query
+						? filterAccountsByQuery(this.accounts.rows, query)
+						: this.accounts.rows;
+					const filtered = this.accounts.pinnedOnly
+						? searched.filter((account) => Boolean(account?.pinned))
+						: searched;
+					if (!filtered.length) {
+						return;
+					}
+					const hasSelected = filtered.some(
+						(account) => account.id === this.accounts.selectedId,
 				);
 				if (!hasSelected) {
 					this.accounts.selectedId = filtered[0].id;
@@ -2628,13 +2636,21 @@
 				}
 				return items;
 			},
-			get filteredAccounts() {
-				const filtered = filterAccountsByQuery(
-					this.accounts.rows,
-					this.accounts.searchQuery,
-				);
-				return this.sortAccounts(filtered);
-			},
+				get filteredAccounts() {
+					const filtered = filterAccountsByQuery(
+						this.accounts.rows,
+						this.accounts.searchQuery,
+					);
+					const pinnedFiltered = this.accounts.pinnedOnly
+						? filtered.filter((account) => Boolean(account?.pinned))
+						: filtered;
+					return this.sortAccounts(pinnedFiltered);
+				},
+				get pinnedAccountsCount() {
+					return (Array.isArray(this.accounts.rows) ? this.accounts.rows : []).filter(
+						(account) => Boolean(account?.pinned),
+					).length;
+				},
 			get selectedAccountIds() {
 				return Array.isArray(this.accounts.selectedIds)
 					? this.accounts.selectedIds.filter(Boolean)
