@@ -62,6 +62,21 @@ Operational verification should prioritize active query behavior:
 
 Enable Prometheus admin API only for cleanup windows, then disable it again.
 
+### Histogram buckets: stability and rollouts
+
+Prometheus histogram bucket boundaries are part of the metric contract. Do not change bucket boundaries for an
+existing histogram metric name in a rolling deploy: during rollout, Prometheus will ingest a mix of bucket sets under
+the same metric name, and `histogram_quantile()` may warn about (and correct) non-monotonic inputs.
+
+Best practice: introduce a new metric name (e.g. `*_v2`) when changing histogram buckets, switch dashboards/alerts to
+the new metric, then remove the old metric after the migration window/retention has passed.
+
+If you insist on changing bucket boundaries without a new metric name, do it as a maintenance window:
+
+- Deploy as a flag-day cutover (no mixed versions scraping).
+- Delete the old histogram series (`*_bucket`, `*_sum`, `*_count`) via the Prometheus admin API.
+- Run `clean_tombstones` and re-verify that only one bucket schema exists in history.
+
 ### Suggested panels (PromQL)
 
 - Top 20 accounts by remaining secondary credits:

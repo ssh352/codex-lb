@@ -117,8 +117,30 @@ class Metrics:
             "codex_lb_proxy_latency_ms",
             "Proxy request latency in milliseconds.",
             labelnames=("model", "api"),
-            # 25ms .. 60s
-            buckets=(25, 50, 100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000),
+            # 25ms .. 15m
+            buckets=(
+                25,
+                50,
+                100,
+                250,
+                500,
+                1_000,
+                2_000,
+                5_000,
+                10_000,
+                30_000,
+                60_000,
+                75_000,
+                90_000,
+                120_000,
+                150_000,
+                180_000,
+                240_000,
+                300_000,
+                420_000,
+                600_000,
+                900_000,
+            ),
             registry=self._registry,
         )
         self._proxy_tokens_total = Counter(
@@ -324,7 +346,8 @@ class Metrics:
             self._proxy_account_requests_total.labels(account_id=obs.account_id, status=status, api=api).inc()
 
         if obs.latency_ms is not None and obs.latency_ms >= 0:
-            self._proxy_latency_ms.labels(model=model, api=api).observe(float(obs.latency_ms))
+            latency_ms = float(obs.latency_ms)
+            self._proxy_latency_ms.labels(model=model, api=api).observe(latency_ms)
 
         if obs.error_code:
             self._proxy_errors_total.labels(error_code=obs.error_code).inc()

@@ -225,7 +225,7 @@
 	      "id": 7,
 	      "type": "timeseries",
 	      "title": "Latency p50/p95 (global, s)",
-		      "description": "Server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), derived from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this measures total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb network/UI time. Retries/failovers contribute separate samples. PromQL: histogram_quantile over sum by (le) of rate(...[1h]) across selected model/api. p50=median; p95=tail (95% of attempts are faster).",
+		"description": "Server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), derived from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this measures total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb network/UI time. Retries/failovers contribute separate samples. PromQL: histogram_quantile over sum by (le) of rate(...[1h]) across selected model/api. p50=median; p95=tail (95% of attempts are faster).",
 	      "gridPos": {
 	        "x": 0,
 	        "y": 22,
@@ -235,12 +235,12 @@
 	      "targets": [
 	        {
 	          "refId": "A",
-		          "expr": "histogram_quantile(0.5, sum by (le) (clamp_min(rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]), 0))) / 1000",
+		          "expr": "histogram_quantile(0.5, sum by (le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000",
 	          "legendFormat": "p50"
 	        },
 	        {
 	          "refId": "B",
-		          "expr": "histogram_quantile(0.95, sum by (le) (clamp_min(rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]), 0))) / 1000",
+		          "expr": "histogram_quantile(0.95, sum by (le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000",
 	          "legendFormat": "p95"
 	        }
 	      ],
@@ -284,7 +284,7 @@
 	      "id": 9,
 	      "type": "timeseries",
 	      "title": "Latency p95 by model (s)",
-		      "description": "Per-model p95 (tail) server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this is total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb time; retries/failovers are separate samples. PromQL: histogram_quantile over sum by (model, le) of rate(...[1h]) for selected model/api.",
+		"description": "Per-model p95 (tail) server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this is total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb time; retries/failovers are separate samples. PromQL: histogram_quantile over sum by (model, le) of rate(...[1h]) for selected model/api.",
 	      "gridPos": {
 	        "x": 0,
 	        "y": 29,
@@ -294,7 +294,7 @@
 	      "targets": [
 	        {
 	          "refId": "A",
-		          "expr": "histogram_quantile(0.95, sum by (model, le) (clamp_min(rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]), 0))) / 1000",
+		          "expr": "histogram_quantile(0.95, sum by (model, le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000",
 	          "legendFormat": "{{model}}"
 	        }
 	      ],
@@ -445,7 +445,7 @@
 	      "id": 20,
 	      "type": "timeseries",
 	      "title": "Latency p50 by model (s)",
-		      "description": "Per-model p50 (median) server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this is total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb time; retries/failovers are separate samples. PromQL: histogram_quantile over sum by (model, le) of rate(...[1h]) for selected model/api.",
+		"description": "Per-model p50 (median) server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this is total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb time; retries/failovers are separate samples. PromQL: histogram_quantile over sum by (model, le) of rate(...[1h]) for selected model/api.",
 	      "gridPos": {
 	        "x": 12,
 	        "y": 29,
@@ -455,7 +455,7 @@
 	      "targets": [
 	        {
 	          "refId": "A",
-		          "expr": "histogram_quantile(0.5, sum by (model, le) (clamp_min(rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]), 0))) / 1000",
+		          "expr": "histogram_quantile(0.5, sum by (model, le) (rate(codex_lb_proxy_latency_ms_bucket{model=~\"$model\",api=~\"$api\"}[1h]))) / 1000",
 	          "legendFormat": "{{model}}"
 	        }
 	      ],
