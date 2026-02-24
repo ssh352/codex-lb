@@ -25,6 +25,26 @@ Recommended:
 
 Grafana should be bound to localhost only by default.
 
+### Grafana admin password reset (docker)
+
+Purpose: reset the Grafana admin password when it is unknown or has been changed in the persisted data volume.
+This is an operational runbook step for the local docker-compose setup; it updates the SQLite DB under
+`/var/lib/grafana` and preserves dashboards.
+
+Constraints:
+- Requires the Grafana container to be running and accessible via Docker.
+- Container name assumes the default compose name (`codex-lb-grafana-1`); adjust if you renamed the project.
+
+Failure modes:
+- If the container name is wrong or Grafana is not running, the command fails. Confirm with `docker ps` and use the
+  correct container name.
+
+Example (reset to `admin`):
+
+```bash
+docker exec codex-lb-grafana-1 grafana cli admin reset-admin-password admin
+```
+
 ### Selective model cleanup caveat (TSDB tombstones)
 
 If you need to remove one model label from Prometheus history (for example `model="gpt-4.1-mini"`), keep in mind:
