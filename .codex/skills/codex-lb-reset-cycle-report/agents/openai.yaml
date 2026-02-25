@@ -1,0 +1,5 @@
+interface:
+  display_name: "Codex LB Reset Cycle Report"
+  short_description: "Manual reset-cycle USD + request report"
+  default_prompt: "Generate a reset-cycle usage/cost report for an account from ~/.codex-lb."
+
