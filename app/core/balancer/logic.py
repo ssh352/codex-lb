@@ -17,6 +17,20 @@ PERMANENT_FAILURE_CODES = {
 }
 
 _SECONDARY_RESET_UNKNOWN_SORT_VALUE = 2**63 - 1
+
+# Tier weights encode a mild preference for higher tiers (latency and likely response quality),
+# without trying to predict per-request token usage/cost.
+#
+# These are policy weights, not a strict “latency ratio”. For example, in one recent sample of
+# successful proxy requests (model=`gpt-5.2`, 2026-02-06..2026-02-24), mean latencies by tier label
+# were approximately:
+# - pro:  ~18.03s (n=10,456)  => ~1.17s faster than plus (~6.1% vs plus)
+# - plus: ~19.20s (n=44,570)  => ~2.40s faster than free (~11.1% vs free)
+# - free: ~21.60s (n=96,810)  => pro is ~3.57s faster (~16.5% vs free)
+#
+# Important: plan types can change over time and codex-lb does not currently persist plan-type
+# history per request, so any latency rollup by tier should be treated as directional (a request
+# logged while an account later downgrades will still be grouped by the latest stored plan type).
 _TIER_WEIGHTS: dict[str, float] = {
     "pro": 1.0,
     "plus": 0.72,
