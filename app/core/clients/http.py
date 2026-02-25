@@ -42,6 +42,13 @@ async def init_http_client() -> HttpClient:
     # - transient network drops or host sleep/wake,
     # - upstream occasionally closing a stream without a clean terminator.
     #
+    # Related: "Connection reset by peer" (macOS [Errno 54] / ECONNRESET).
+    #
+    # This often happens at request start when a proxy chain silently drops idle keep-alive connections
+    # and the client attempts to reuse a stale pooled socket. Tuning
+    # `CODEX_LB_HTTP_CLIENT_KEEPALIVE_TIMEOUT_SECONDS` lower (e.g. ~5–10s) can reduce the probability of
+    # reusing stale connections, at the cost of more frequent TCP/TLS handshakes.
+    #
     # codex-lb treats these as upstream transport failures on the streaming path and surfaces them
     # to clients as "upstream_unavailable" (and stores the error message for debugging). Occasional
     # occurrences are expected; if they become frequent, first try bypassing proxies for upstream

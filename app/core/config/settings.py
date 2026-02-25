@@ -114,7 +114,20 @@ class Settings(BaseSettings):
     # Tier-aware hybrid account selection is always enabled. The legacy strategy toggle was removed.
     http_client_connector_limit: int = Field(default=256, gt=0)
     http_client_connector_limit_per_host: int = Field(default=0, ge=0)
-    http_client_keepalive_timeout_seconds: float = Field(default=30.0, gt=0)
+    # How long aiohttp keeps *idle* pooled TCP connections before closing them.
+    #
+    # This affects connection reuse; it does not limit the lifetime of active streaming (SSE) responses.
+    #
+    # Default rationale:
+    # - When running behind certain proxy chains (e.g. VLESS/xray) and/or NATs, idle pooled connections
+    #   may be silently dropped after a short period. Reusing those stale connections tends to surface as
+    #   transport errors like "Connection reset by peer" at request start.
+    # - A moderate idle timeout reduces the chance of reusing stale connections while keeping handshake
+    #   overhead reasonable for bursty traffic.
+    #
+    # If you see frequent upstream resets right at request start, try lowering this to ~5s. If the
+    # environment is stable and you want fewer handshakes, increasing to ~15–30s can improve throughput.
+    http_client_keepalive_timeout_seconds: float = Field(default=10.0, gt=0)
     http_client_dns_cache_ttl_seconds: int = Field(default=300, ge=0)
     # Startup logging (debugging).
     #
