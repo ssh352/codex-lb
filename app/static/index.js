@@ -679,6 +679,11 @@
 
 	const normalizeAccountStatus = (status) =>
 		ACCOUNT_STATUS_MAP[status] || status || "deactivated";
+	const canPauseAccount = (account) => account?.status === "active";
+	const canResumeAccount = (account) =>
+		account?.status === "paused" ||
+		account?.status === "limited" ||
+		account?.status === "exceeded";
 
 	const normalizeAccount = (account) => {
 		const usage = account.usage || {};
@@ -1658,11 +1663,11 @@
 				refreshPromise: null,
 				settingsLoadPromise: null,
 
-			async init() {
-				if (this.hasInitialized) {
-					return;
-				}
-				this.hasInitialized = true;
+				async init() {
+					if (this.hasInitialized) {
+						return;
+					}
+					this.hasInitialized = true;
 				try {
 					document.documentElement.setAttribute("data-theme", this.theme);
 				} catch {
@@ -1706,6 +1711,16 @@
 					this.$watch("accounts.pinnedOnly", () => {
 						this.syncAccountSearchSelection();
 					});
+					window.addEventListener(
+						"keydown",
+						(event) => {
+							const key = typeof event?.key === "string" ? event.key : "";
+							if (key === "Escape" || key === "Esc" || event?.keyCode === 27) {
+								this.handleWindowEscape(event);
+							}
+						},
+						{ capture: true },
+					);
 					window.addEventListener("visibilitychange", () => {
 						this.syncAutoRefresh();
 						if (document.visibilityState === "visible") {
@@ -2649,6 +2664,19 @@
 						? this.accounts.selectedIds.filter(Boolean)
 						: [];
 				},
+				get selectedAccounts() {
+					if (!Array.isArray(this.accounts.rows) || !this.selectedAccountIds.length) {
+						return [];
+					}
+					const selectedIds = new Set(this.selectedAccountIds);
+					return this.accounts.rows.filter((account) => selectedIds.has(account.id));
+				},
+				get canBulkPauseSelectedAccounts() {
+					return this.selectedAccounts.some((account) => canPauseAccount(account));
+				},
+				get canBulkResumeSelectedAccounts() {
+					return this.selectedAccounts.some((account) => canResumeAccount(account));
+				},
 				get focusedAccount() {
 					return (
 						this.accounts.rows.find(
@@ -2682,12 +2710,18 @@
 					const target = event?.target;
 					const tagName = typeof target?.tagName === "string" ? target.tagName.toLowerCase() : "";
 					if (
-						tagName === "input" ||
 						tagName === "textarea" ||
 						tagName === "select" ||
 						Boolean(target?.isContentEditable)
 					) {
 						return;
+					}
+					if (tagName === "input") {
+						const inputType =
+							typeof target?.type === "string" ? target.type.toLowerCase() : "";
+						if (inputType !== "checkbox" && inputType !== "radio") {
+							return;
+						}
 					}
 					event?.preventDefault?.();
 					this.clearAccountSelection();
@@ -2721,8 +2755,27 @@
 				});
 			},
 				selectAccount(accountId) {
-					// Backwards-compatible alias: "select" is now focus-only (bulk selection uses checkboxes).
+					// Backwards-compatible alias: "select" is now focus-only (selection uses row clicks/checkboxes).
 					this.focusAccount(accountId);
+				},
+				handleAccountRowClick(accountId, event) {
+					const id = String(accountId ?? "").trim();
+					if (!id) {
+						return;
+					}
+					const result = Selection.nextSelection({
+						orderedIds: this._orderedAccountIds(),
+						clickedId: id,
+						selectedIds: this.accounts.selectedIds,
+						anchorId: this.accounts.selectionAnchorId || this.accounts.focusedId,
+						shift: Boolean(event?.shiftKey),
+						ctrl: Boolean(event?.ctrlKey),
+						meta: Boolean(event?.metaKey),
+					});
+					this.accounts.selectedIds = result.selectedIds;
+					this.accounts.selectionAnchorId = result.anchorId || this.accounts.selectionAnchorId;
+					this.accounts.focusedId = id;
+					this.$refs?.accountSearch?.blur?.();
 				},
 				toggleAccountSelection(accountId, event) {
 					const result = Selection.nextSelection({
@@ -2799,13 +2852,33 @@
 				});
 			},
 			async pauseSelectedAccounts() {
-				const ids = this.selectedAccountIds;
+				const ids = this.selectedAccounts
+					.filter((account) => canPauseAccount(account))
+					.map((account) => account.id);
+				if (!ids.length) {
+					this.openToast({
+						tone: "warning",
+						message: "No selected accounts can be paused.",
+						timeoutMs: 6000,
+					});
+					return;
+				}
 				return this._bulkCall(ids, "Pause", (accountId) =>
 					postJson(API_ENDPOINTS.accountPause(accountId), {}, "pause account"),
 				);
 			},
 			async resumeSelectedAccounts() {
-				const ids = this.selectedAccountIds;
+				const ids = this.selectedAccounts
+					.filter((account) => canResumeAccount(account))
+					.map((account) => account.id);
+				if (!ids.length) {
+					this.openToast({
+						tone: "warning",
+						message: "No selected accounts can be resumed.",
+						timeoutMs: 6000,
+					});
+					return;
+				}
 				return this._bulkCall(ids, "Resume", (accountId) =>
 					postJson(API_ENDPOINTS.accountReactivate(accountId), {}, "resume account"),
 				);
@@ -3076,9 +3149,25 @@
 						}
 				},
 				async resumeSelectedAccount() {
+					if (!canResumeAccount(this.focusedAccount)) {
+						this.openToast({
+							tone: "warning",
+							message: "This account cannot be resumed.",
+							timeoutMs: 6000,
+						});
+						return;
+					}
 						return this.resumeAccount(this.focusedAccount.id);
 					},
 					async pauseSelectedAccount() {
+						if (!canPauseAccount(this.focusedAccount)) {
+							this.openToast({
+								tone: "warning",
+								message: "This account cannot be paused.",
+								timeoutMs: 6000,
+							});
+							return;
+						}
 						const accountId = this.focusedAccount.id;
 						if (!accountId) {
 							this.openToast({

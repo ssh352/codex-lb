@@ -31,7 +31,8 @@
   <link rel="stylesheet" href="/dashboard/index.css?v=__ASSET_VERSION__">
 </head>
 
-<body class="has-scrollbar" x-data="feApp" x-init="init()" @keydown.window.escape="handleWindowEscape($event)">
+<body class="has-scrollbar" x-data="feApp" x-init="init()" @keydown.window.escape="handleWindowEscape($event)"
+  @keydown.window.esc="handleWindowEscape($event)">
   <!-- AlpineJS is loaded from a CDN below; if the CDN is slow/blocked, show this boot overlay instead of a blank page. -->
   <div class="boot-overlay" x-data x-init="$el.remove()">
     <div class="loading-panel" role="status" aria-live="polite">
@@ -403,8 +404,9 @@
 		              <h3>Account list</h3>
 		              <div class="list-actions">
 	                <div class="searchbox">
-	                  <input type="search" placeholder="Search accounts" aria-label="Search accounts" x-ref="accountSearch"
-	                    x-model="accounts.searchQuery" @keydown.escape.prevent="clearAccountSearch">
+		                  <input type="search" placeholder="Search accounts" aria-label="Search accounts" x-ref="accountSearch"
+		                    x-model="accounts.searchQuery" @keydown.escape.prevent="clearAccountSearch"
+                        @keydown.esc.prevent="clearAccountSearch">
 	                  <button type="button" aria-label="search" title="Search accounts"
 	                    @click="focusAccountSearch"></button>
 	                </div>
@@ -425,8 +427,8 @@
 	                <div class="inline-actions">
 	                  <button type="button" @click="addSelectedAccountsToRoutingPool">Pin</button>
 	                  <button type="button" @click="removeSelectedAccountsFromRoutingPool">Unpin</button>
-	                  <button type="button" @click="pauseSelectedAccounts">Pause</button>
-	                  <button type="button" @click="resumeSelectedAccounts">Resume</button>
+	                  <button type="button" x-show="canBulkPauseSelectedAccounts" @click="pauseSelectedAccounts">Pause</button>
+	                  <button type="button" x-show="canBulkResumeSelectedAccounts" @click="resumeSelectedAccounts">Resume</button>
 	                  <button type="button" @click="deleteSelectedAccounts">Delete</button>
 		                  <button type="button" @click="clearAccountSelection">Clear selection</button>
 	                </div>
@@ -480,8 +482,8 @@
 	                  </thead>
 	                  <tbody>
 	                    <template x-for="account in filteredAccounts" :key="account.id">
-		                      <tr :class="{ highlighted: isAccountSelected(account.id), focused: isAccountFocused(account.id) }"
-		                        @click.stop="focusAccount(account.id)" style="cursor: pointer">
+			                      <tr :class="{ highlighted: isAccountSelected(account.id), focused: isAccountFocused(account.id) }"
+			                        @click.stop="handleAccountRowClick(account.id, $event)" style="cursor: pointer">
 	                        <td style="text-align: center">
 	                          <input type="checkbox" :checked="isAccountSelected(account.id)"
 	                            :aria-label="`Select ${account.displayName || account.email || account.id}`"
@@ -628,10 +630,10 @@
 	                <template x-if="focusedAccount.status === 'deactivated'">
 	                  <button @click="startReauthFlow">Re-authenticate</button>
 	                </template>
-	                <template x-if="focusedAccount.status === 'paused'">
+	                <template x-if="focusedAccount.status === 'paused' || focusedAccount.status === 'limited' || focusedAccount.status === 'exceeded'">
 	                  <button @click="resumeSelectedAccount">Resume</button>
 	                </template>
-	                <template x-if="focusedAccount.status !== 'deactivated' && focusedAccount.status !== 'paused'">
+	                <template x-if="focusedAccount.status === 'active'">
 	                  <button @click="pauseSelectedAccount">Pause</button>
 	                </template>
 	                <button @click="deleteSelectedAccount">Delete</button>
