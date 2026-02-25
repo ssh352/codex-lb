@@ -134,6 +134,11 @@ class LoadBalancer:
     def invalidate_snapshot(self) -> None:
         self._snapshot = None
 
+    def reset_runtime_state(self, account_id: str) -> None:
+        if not account_id:
+            return
+        self._runtime.pop(account_id, None)
+
     async def select_forced_account(self, account_id: str) -> AccountSelection:
         # Force selection bypasses eligibility checks and pinned-pool logic. This is intended for
         # operator debugging ("what does this specific upstream account return right now?") where

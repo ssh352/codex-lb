@@ -8,16 +8,16 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
 	"use strict";
 
-		const createDefaultAccountsState = () => ({
-			selectedId: "",
-			selectedIds: [],
-			selectionAnchorId: "",
-			sortKey: "quotaResetSecondary",
-			sortDirection: "asc",
-			rows: [],
-			searchQuery: "",
-			pinnedOnly: false,
-		});
+			const createDefaultAccountsState = () => ({
+				focusedId: "",
+				selectedIds: [],
+				selectionAnchorId: "",
+				sortKey: "quotaResetSecondary",
+				sortDirection: "asc",
+				rows: [],
+				searchQuery: "",
+				pinnedOnly: false,
+			});
 
 	return {
 		createDefaultAccountsState,

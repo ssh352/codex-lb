@@ -1188,6 +1188,15 @@ tr.highlighted td:first-child {
   box-shadow: inset 3px 0 0 var(--accent-primary);
 }
 
+tr.focused:not(.highlighted) td {
+  background: var(--bg-list-hover);
+  border-bottom-color: var(--border-subtle);
+}
+
+tr.focused:not(.highlighted) td:first-child {
+  box-shadow: inset 3px 0 0 var(--border-strong);
+}
+
 input[type="text"],
 input[type="search"],
 input[type="file"] {

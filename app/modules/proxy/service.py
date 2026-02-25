@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
 from typing import AsyncIterator, Mapping
@@ -69,6 +70,17 @@ _CODEX_SESSION_ID_FALLBACK_RE = re.compile(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeResult:
+    ok: bool
+    status_code: int
+    error_type: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    resets_at: int | None = None
+    resets_in_seconds: float | None = None
+
+
 def _fallback_codex_session_id(sticky_key: str | None) -> str | None:
     if not sticky_key:
         return None
@@ -97,6 +109,10 @@ class ProxyService:
 
     def invalidate_routing_snapshot(self) -> None:
         self._load_balancer.invalidate_snapshot()
+
+    def reset_account_runtime_state(self, account_id: str) -> None:
+        self._load_balancer.reset_runtime_state(account_id)
+        self.invalidate_routing_snapshot()
 
     async def debug_lb_dump(self) -> LoadBalancerDebugDump:
         return await self._load_balancer.debug_dump()
@@ -137,6 +153,74 @@ class ProxyService:
             api=api,
             suppress_text_done_events=suppress_text_done_events,
         )
+
+    async def probe_compact_responses(self, *, account_id: str, model: str) -> ProbeResult:
+        forced_id = (account_id or "").strip()
+        if not forced_id:
+            return ProbeResult(
+                ok=False,
+                status_code=400,
+                error_code="invalid_account_id",
+                error_message="Empty account id",
+            )
+
+        normalized_model = (model or "").strip()
+        if not normalized_model:
+            return ProbeResult(ok=False, status_code=400, error_code="invalid_model", error_message="Empty model")
+
+        selection = await self._load_balancer.select_forced_account(forced_id)
+        if selection.account is None:
+            return ProbeResult(
+                ok=False,
+                status_code=404,
+                error_code="account_not_found",
+                error_message=selection.error_message or "Account not found",
+            )
+
+        async def _call_probe(target: Account) -> OpenAIResponsePayload:
+            access_token = self._encryptor.decrypt(target.access_token_encrypted)
+            upstream_account_id = _header_account_id(target.chatgpt_account_id)
+            payload = ResponsesCompactRequest(
+                model=normalized_model,
+                instructions="ping",
+                input="ping",
+            )
+            return await core_compact_responses(payload, {}, access_token, upstream_account_id)
+
+        account = await self._ensure_fresh_if_needed(selection.account)
+        try:
+            response = await _call_probe(account)
+        except ProxyResponseError as exc:
+            error = _parse_openai_error(exc.payload)
+            normalized_code = _normalize_error_code(error.code if error else None, error.type if error else None)
+            resets_at = int(error.resets_at) if error and error.resets_at is not None else None
+            resets_in = float(error.resets_in_seconds) if error and error.resets_in_seconds is not None else None
+            return ProbeResult(
+                ok=False,
+                status_code=exc.status_code,
+                error_type=error.type if error else None,
+                error_code=normalized_code,
+                error_message=error.message if error else None,
+                resets_at=resets_at,
+                resets_in_seconds=resets_in,
+            )
+
+        if response.status == "failed" or response.error is not None:
+            error = response.error
+            normalized_code = _normalize_error_code(error.code if error else None, error.type if error else None)
+            resets_at = int(error.resets_at) if error and error.resets_at is not None else None
+            resets_in = float(error.resets_in_seconds) if error and error.resets_in_seconds is not None else None
+            return ProbeResult(
+                ok=False,
+                status_code=200,
+                error_type=error.type if error else None,
+                error_code=normalized_code,
+                error_message=error.message if error else None,
+                resets_at=resets_at,
+                resets_in_seconds=resets_in,
+            )
+
+        return ProbeResult(ok=True, status_code=200)
 
     async def compact_responses(
         self,

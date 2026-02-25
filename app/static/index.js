@@ -1257,7 +1257,7 @@
 				{ label: "Re-authenticate", type: "reauth" },
 			];
 		}
-		if (account.status === "paused") {
+		if (account.status === "paused" || account.status === "limited" || account.status === "exceeded") {
 			return [
 				{ label: "Details", type: "details" },
 				{ label: "Resume", type: "resume" },
@@ -2014,28 +2014,26 @@
 					this.refreshPromise = null;
 				}
 			},
-				applyData(data, preferredId) {
-				this.accounts.rows = Array.isArray(data.accounts) ? data.accounts : [];
-				const hasPreferred =
-					preferredId &&
-					this.accounts.rows.some((account) => account.id === preferredId);
-				if (hasPreferred) {
-					this.accounts.selectedId = preferredId;
-				} else if (
-					this.accounts.selectedId &&
-					!this.accounts.rows.some(
-						(account) => account.id === this.accounts.selectedId,
-					)
-				) {
-					this.accounts.selectedId = this.accounts.rows[0]?.id || "";
-					} else if (!this.accounts.selectedId && this.accounts.rows.length > 0) {
-							this.accounts.selectedId = this.accounts.rows[0].id;
-						}
-					const reconciled = Selection.reconcileSelection({
-						existingIds: this.accounts.rows.map((account) => account.id),
-						selectedIds: this.accounts.selectedIds,
-						anchorId: this.accounts.selectionAnchorId,
-					});
+					applyData(data, preferredId) {
+					this.accounts.rows = Array.isArray(data.accounts) ? data.accounts : [];
+					const hasPreferred =
+						preferredId &&
+						this.accounts.rows.some((account) => account.id === preferredId);
+					if (hasPreferred) {
+						this.accounts.focusedId = preferredId;
+					} else if (
+						this.accounts.focusedId &&
+						!this.accounts.rows.some(
+							(account) => account.id === this.accounts.focusedId,
+						)
+					) {
+						this.accounts.focusedId = "";
+					}
+						const reconciled = Selection.reconcileSelection({
+							existingIds: this.accounts.rows.map((account) => account.id),
+							selectedIds: this.accounts.selectedIds,
+							anchorId: this.accounts.selectionAnchorId,
+						});
 					this.accounts.selectedIds = reconciled.selectedIds;
 					this.accounts.selectionAnchorId = reconciled.anchorId;
 					if (this.accounts.selectedIds.length === 1) {
@@ -2101,24 +2099,21 @@
 				togglePinnedOnlyAccounts() {
 					this.accounts.pinnedOnly = !this.accounts.pinnedOnly;
 				},
-				syncAccountSearchSelection() {
-					const query = normalizeSearchInput(this.accounts.searchQuery);
-					const searched = query
-						? filterAccountsByQuery(this.accounts.rows, query)
-						: this.accounts.rows;
-					const filtered = this.accounts.pinnedOnly
-						? searched.filter((account) => Boolean(account?.pinned))
-						: searched;
-					if (!filtered.length) {
-						return;
-					}
-					const hasSelected = filtered.some(
-						(account) => account.id === this.accounts.selectedId,
-				);
-				if (!hasSelected) {
-					this.accounts.selectedId = filtered[0].id;
-				}
-			},
+					syncAccountSearchSelection() {
+						const query = normalizeSearchInput(this.accounts.searchQuery);
+						const searched = query
+							? filterAccountsByQuery(this.accounts.rows, query)
+							: this.accounts.rows;
+						const filtered = this.accounts.pinnedOnly
+							? searched.filter((account) => Boolean(account?.pinned))
+							: searched;
+						const hasFocused = this.accounts.focusedId
+							? filtered.some((account) => account.id === this.accounts.focusedId)
+							: false;
+						if (!hasFocused) {
+							this.accounts.focusedId = "";
+						}
+				},
 			async handleAuthImport(event) {
 				console.info("[auth-import] change event", {
 					hasFiles: Boolean(event?.target?.files?.length),
@@ -2605,25 +2600,23 @@
 				const normalizedSeconds = normalizeAutoRefreshIntervalSeconds(
 					this.autoRefresh.intervalSeconds,
 				);
-				const autoRefreshLabel = !this.autoRefresh.enabled
-					? "off"
-					: this.shouldAutoRefresh()
-						? `${normalizedSeconds}s`
-						: "paused";
+					const autoRefreshLabel = !this.autoRefresh.enabled
+						? "off"
+						: this.shouldAutoRefresh()
+							? `${normalizedSeconds}s`
+							: "paused";
 
-				const selectedCount = this.selectedAccountIds.length;
-					const items =
-						this.view === "accounts"
-							? [
-									`Selected: ${selectedCount}`,
-									selectedCount === 1
-										? `Account: ${this.accounts.selectedId || "--"}`
-										: null,
-									`Last sync: ${lastSyncLabel}`,
-									`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
-									`Auto-refresh: ${autoRefreshLabel}`,
-							  ].filter(Boolean)
-							: [
+					const selectedCount = this.selectedAccountIds.length;
+						const items =
+							this.view === "accounts"
+								? [
+										`Selected: ${selectedCount}`,
+										`Focused: ${this.accounts.focusedId || "--"}`,
+										`Last sync: ${lastSyncLabel}`,
+										`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
+										`Auto-refresh: ${autoRefreshLabel}`,
+								  ].filter(Boolean)
+								: [
 									`Last sync: ${lastSyncLabel}`,
 									`Routing: ${routingLabel(this.dashboardData.routing?.strategy)}`,
 									`Backend: ${this.backendPath}`,
@@ -2651,30 +2644,57 @@
 						(account) => Boolean(account?.pinned),
 					).length;
 				},
-			get selectedAccountIds() {
-				return Array.isArray(this.accounts.selectedIds)
-					? this.accounts.selectedIds.filter(Boolean)
-					: [];
-			},
-			get selectedAccount() {
-				return (
-					this.accounts.rows.find(
-						(account) => account.id === this.accounts.selectedId,
-					) ||
-					this.accounts.rows[0] ||
-					{}
-				);
-			},
-			isAccountSelected(accountId) {
-				return this.selectedAccountIds.includes(accountId);
-			},
-			clearAccountSelection() {
-				this.accounts.selectedIds = [];
-				this.accounts.selectionAnchorId = "";
-			},
-			_orderedAccountIds() {
-				return (this.filteredAccounts || []).map((account) => account.id).filter(Boolean);
-			},
+				get selectedAccountIds() {
+					return Array.isArray(this.accounts.selectedIds)
+						? this.accounts.selectedIds.filter(Boolean)
+						: [];
+				},
+				get focusedAccount() {
+					return (
+						this.accounts.rows.find(
+							(account) => account.id === this.accounts.focusedId,
+						) || {}
+					);
+				},
+				isAccountSelected(accountId) {
+					return this.selectedAccountIds.includes(accountId);
+				},
+				isAccountFocused(accountId) {
+					return this.accounts.focusedId === accountId;
+				},
+				focusAccount(accountId) {
+					this.accounts.focusedId = String(accountId || "").trim();
+				},
+				clearAccountSelection() {
+					this.accounts.selectedIds = [];
+					this.accounts.selectionAnchorId = "";
+				},
+				handleWindowEscape(event) {
+					if (this.view !== "accounts") {
+						return;
+					}
+					if (this.messageBox.open || this.authDialog.open) {
+						return;
+					}
+					if (!this.selectedAccountIds.length) {
+						return;
+					}
+					const target = event?.target;
+					const tagName = typeof target?.tagName === "string" ? target.tagName.toLowerCase() : "";
+					if (
+						tagName === "input" ||
+						tagName === "textarea" ||
+						tagName === "select" ||
+						Boolean(target?.isContentEditable)
+					) {
+						return;
+					}
+					event?.preventDefault?.();
+					this.clearAccountSelection();
+				},
+				_orderedAccountIds() {
+					return (this.filteredAccounts || []).map((account) => account.id).filter(Boolean);
+				},
 			setAccountsSort(key) {
 				const nextKey = String(key || "").trim();
 				if (!nextKey) {
@@ -2700,48 +2720,37 @@
 					sortDirection: this.accounts.sortDirection,
 				});
 			},
-			selectAccount(accountId, event) {
-				const result = Selection.nextSelection({
-					orderedIds: this._orderedAccountIds(),
-					clickedId: accountId,
-					selectedIds: this.accounts.selectedIds,
-					anchorId: this.accounts.selectionAnchorId || this.accounts.selectedId,
-					shift: Boolean(event?.shiftKey),
-					ctrl: Boolean(event?.ctrlKey),
-					meta: Boolean(event?.metaKey),
-				});
-				this.accounts.selectedIds = result.selectedIds;
-				this.accounts.selectionAnchorId = result.anchorId || this.accounts.selectionAnchorId;
-				this.accounts.selectedId = accountId;
-			},
-			toggleAccountSelection(accountId, event) {
-				const result = Selection.nextSelection({
-					orderedIds: this._orderedAccountIds(),
-					clickedId: accountId,
-					selectedIds: this.accounts.selectedIds,
-					anchorId: this.accounts.selectionAnchorId || this.accounts.selectedId,
-					shift: Boolean(event?.shiftKey),
-					ctrl: true,
-					meta: false,
-				});
-				this.accounts.selectedIds = result.selectedIds;
-				this.accounts.selectionAnchorId = result.anchorId || this.accounts.selectionAnchorId;
-				this.accounts.selectedId = accountId;
-			},
-			toggleAllFilteredAccounts() {
-				const ids = (this.filteredAccounts || []).map((account) => account.id).filter(Boolean);
-				if (!ids.length) {
-					this.clearAccountSelection();
-					return;
-				}
-				const selected = new Set(this.selectedAccountIds);
-				const allSelected = ids.every((id) => selected.has(id));
-				this.accounts.selectedIds = allSelected ? [] : ids;
-				if (!allSelected && ids[0]) {
-					this.accounts.selectionAnchorId = ids[0];
-					this.accounts.selectedId = ids[0];
-				}
-			},
+				selectAccount(accountId) {
+					// Backwards-compatible alias: "select" is now focus-only (bulk selection uses checkboxes).
+					this.focusAccount(accountId);
+				},
+				toggleAccountSelection(accountId, event) {
+					const result = Selection.nextSelection({
+						orderedIds: this._orderedAccountIds(),
+						clickedId: accountId,
+						selectedIds: this.accounts.selectedIds,
+						anchorId: this.accounts.selectionAnchorId || this.accounts.focusedId,
+						shift: Boolean(event?.shiftKey),
+						ctrl: true,
+						meta: false,
+					});
+					this.accounts.selectedIds = result.selectedIds;
+					this.accounts.selectionAnchorId = result.anchorId || this.accounts.selectionAnchorId;
+					this.accounts.focusedId = String(accountId || "").trim();
+				},
+				toggleAllFilteredAccounts() {
+					const ids = (this.filteredAccounts || []).map((account) => account.id).filter(Boolean);
+					if (!ids.length) {
+						this.clearAccountSelection();
+						return;
+					}
+					const selected = new Set(this.selectedAccountIds);
+					const allSelected = ids.every((id) => selected.has(id));
+					this.accounts.selectedIds = allSelected ? [] : ids;
+					if (!allSelected && ids[0]) {
+						this.accounts.selectionAnchorId = ids[0];
+					}
+				},
 			async _bulkCall(ids, actionLabel, fn) {
 					const accountIds = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
 					if (!accountIds.length) {
@@ -2763,19 +2772,24 @@
 							message: error?.message || "Request failed",
 						});
 					}
-				}
-				try {
-					await this.refreshAll({ preferredId: this.accounts.selectedId || "" });
-					} finally {
-						this.authDialog.isLoading = false;
 					}
-					if (!failures.length) {
-						this.openToast({
-							tone: "success",
-							message: `${actionLabel} applied to ${accountIds.length} account(s).`,
-						});
-						return;
-					}
+					try {
+						await this.refreshAll({ preferredId: this.accounts.focusedId || "" });
+						} finally {
+							this.authDialog.isLoading = false;
+						}
+						if (!failures.length) {
+							const toast = {
+								tone: "success",
+								message: `${actionLabel} applied to ${accountIds.length} account(s).`,
+							};
+							if (accountIds.length > 1) {
+								toast.actionLabel = "Clear selection";
+								toast.action = () => this.clearAccountSelection();
+							}
+							this.openToast(toast);
+							return;
+						}
 					const details = failures.map((entry) => `${entry.accountId}: ${entry.message}`).join("\n");
 				this.openMessageBox({
 					tone: "warning",
@@ -2841,7 +2855,7 @@
 						this.settings.preferEarlierResetAccounts =
 							normalized.preferEarlierResetAccounts;
 						this.settings.pinnedAccountIds = normalized.pinnedAccountIds;
-						await this.refreshAll({ preferredId: this.accounts.selectedId || "" });
+						await this.refreshAll({ preferredId: this.accounts.focusedId || "" });
 						this.openToast({
 							tone: "success",
 							message: "Pinned accounts updated.",
@@ -2863,7 +2877,7 @@
 										this.settings.pinnedAccountIds =
 											normalizedReverted.pinnedAccountIds;
 										return this.refreshAll({
-											preferredId: this.accounts.selectedId || "",
+											preferredId: this.accounts.focusedId || "",
 										});
 									})
 									.then(() => {
@@ -2909,30 +2923,64 @@
 					"pin accounts",
 				);
 			},
-				async removeSelectedAccountsFromRoutingPool() {
-					const ids = this.selectedAccountIds;
-					if (!ids.length) {
+					async removeSelectedAccountsFromRoutingPool() {
+						const ids = this.selectedAccountIds;
+						if (!ids.length) {
+							return this.openToast({
+								tone: "warning",
+								message: "Select one or more accounts first.",
+								timeoutMs: 6000,
+							});
+						}
+						return this._updateRoutingPool(
+							(currentSet) => {
+							for (const id of ids) {
+								currentSet.delete(id);
+							}
+							return currentSet;
+						},
+						"unpin accounts",
+					);
+				},
+				async pinFocusedAccount() {
+					const accountId = String(this.accounts.focusedId || "").trim();
+					if (!accountId) {
 						return this.openToast({
 							tone: "warning",
-							message: "Select one or more accounts first.",
+							message: "Focus an account before pinning.",
 							timeoutMs: 6000,
 						});
 					}
 					return this._updateRoutingPool(
 						(currentSet) => {
-						for (const id of ids) {
-							currentSet.delete(id);
-						}
-						return currentSet;
-					},
-					"unpin accounts",
-				);
-			},
-			async copyText(value, label = "Copied") {
-				const text = String(value ?? "");
-				if (!text) {
-					return;
-				}
+							currentSet.add(accountId);
+							return currentSet;
+						},
+						"pin account",
+					);
+				},
+				async unpinFocusedAccount() {
+					const accountId = String(this.accounts.focusedId || "").trim();
+					if (!accountId) {
+						return this.openToast({
+							tone: "warning",
+							message: "Focus an account before unpinning.",
+							timeoutMs: 6000,
+						});
+					}
+					return this._updateRoutingPool(
+						(currentSet) => {
+							currentSet.delete(accountId);
+							return currentSet;
+						},
+						"unpin account",
+					);
+				},
+				async copyText(value, label = "Copied") {
+					const text = String(value ?? "");
+					if (!text) {
+						return;
+					}
 				const writeClipboard = async () => {
 					if (navigator?.clipboard?.writeText) {
 						await navigator.clipboard.writeText(text);
@@ -2969,11 +3017,11 @@
 				if (!action || !card) {
 					return;
 				}
-				if (action.type === "details") {
-					this.view = "accounts";
-					this.selectAccount(card.accountId);
-					return;
-				}
+					if (action.type === "details") {
+						this.view = "accounts";
+						this.focusAccount(card.accountId);
+						return;
+					}
 				if (action.type === "reauth") {
 					this.startReauthFlow();
 					return;
@@ -2985,58 +3033,57 @@
 			startReauthFlow() {
 				this.openAddAccountDialog();
 			},
-				async resumeAccount(accountId) {
-					if (!accountId) {
+					async resumeAccount(accountId) {
+						if (!accountId) {
+							this.openToast({
+								tone: "warning",
+								message: "Select an account before resuming.",
+								timeoutMs: 6000,
+							});
+							return;
+						}
+						const accountLabel = formatAccountLabel(accountId, this.accounts.rows);
 						this.openToast({
-							tone: "warning",
-							message: "Select an account before resuming.",
-							timeoutMs: 6000,
+							tone: "info",
+							message: `Resuming ${accountLabel} (probing upstream)…`,
+							timeoutMs: 2500,
 						});
-						return;
-					}
-					const accountLabel = formatAccountLabel(accountId, this.accounts.rows);
-					const confirmed = await this.openConfirmBox({
-					title: "Resume account?",
-					message: `Resume account ${accountLabel}? Routing will include it again.`,
-					confirmLabel: "Resume",
-					cancelLabel: "Cancel",
-				});
-				if (!confirmed) {
-					return;
-				}
-				this.authDialog.isLoading = true;
-				postJson(
-					API_ENDPOINTS.accountReactivate(accountId),
-					{},
-					"resume account",
-				)
-						.then(() => this.refreshAll({ preferredId: accountId }))
-						.then(() => {
+						this.authDialog.isLoading = true;
+						try {
+							await postJson(
+								API_ENDPOINTS.accountReactivate(accountId),
+								{},
+								"resume account",
+							);
+							await this.refreshAll({ preferredId: accountId });
 							this.openToast({
 								tone: "success",
 								message: `${accountLabel} is active again.`,
 							});
-						})
-						.catch((error) => {
+						} catch (error) {
 							this.openToast({
 								tone: "error",
-								message: error.message || "Failed to resume account.",
+								message: error?.message || "Failed to resume account.",
 								timeoutMs: 8000,
 							});
-						})
-						.finally(() => {
+							try {
+								await this.refreshAll({ preferredId: accountId });
+							} catch {
+								// Ignore refresh failures; the error toast above is sufficient.
+							}
+						} finally {
 							this.authDialog.isLoading = false;
-					});
-			},
-			async resumeSelectedAccount() {
-				return this.resumeAccount(this.selectedAccount.id);
-			},
-				async pauseSelectedAccount() {
-					const accountId = this.selectedAccount.id;
-					if (!accountId) {
-						this.openToast({
-							tone: "warning",
-							message: "Select an account before pausing.",
+						}
+				},
+				async resumeSelectedAccount() {
+						return this.resumeAccount(this.focusedAccount.id);
+					},
+					async pauseSelectedAccount() {
+						const accountId = this.focusedAccount.id;
+						if (!accountId) {
+							this.openToast({
+								tone: "warning",
+								message: "Select an account before pausing.",
 							timeoutMs: 6000,
 						});
 						return;
@@ -3070,13 +3117,13 @@
 						.finally(() => {
 							this.authDialog.isLoading = false;
 					});
-			},
-				async deleteSelectedAccount() {
-					const accountId = this.selectedAccount.id;
-					if (!accountId) {
-						this.openToast({
-							tone: "warning",
-							message: "Select an account before deleting.",
+					},
+					async deleteSelectedAccount() {
+						const accountId = this.focusedAccount.id;
+						if (!accountId) {
+							this.openToast({
+								tone: "warning",
+								message: "Select an account before deleting.",
 							timeoutMs: 6000,
 						});
 						return;

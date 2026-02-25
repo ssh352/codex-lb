@@ -100,6 +100,9 @@ class AccountsService:
 
         return await get_or_build_accounts_list(_build)
 
+    async def get_account(self, account_id: str) -> Account | None:
+        return await self._repo.get_account(account_id)
+
     async def import_account(self, raw: bytes) -> AccountImportResponse:
         auth = parse_auth_json(raw)
         claims = claims_from_auth(auth)
@@ -140,6 +143,23 @@ class AccountsService:
         if success:
             type(self).invalidate_cache()
         return success
+
+    async def mark_account_blocked(
+        self,
+        account_id: str,
+        *,
+        status: AccountStatus,
+        reset_at: int | None,
+    ) -> bool:
+        if status not in (AccountStatus.RATE_LIMITED, AccountStatus.QUOTA_EXCEEDED):
+            raise ValueError("mark_account_blocked requires a blocked status")
+        success = await self._repo.update_status(account_id, status, None, reset_at)
+        if not success:
+            return False
+        if status == AccountStatus.QUOTA_EXCEEDED and self._settings_repo is not None:
+            await self._settings_repo.remove_pinned_account_ids([account_id])
+        type(self).invalidate_cache()
+        return True
 
     async def pause_account(self, account_id: str) -> bool:
         success = await self._repo.update_status(account_id, AccountStatus.PAUSED, None)

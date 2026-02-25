@@ -59,8 +59,19 @@ class AccountPauseResponse(DashboardModel):
     status: str
 
 
+class AccountReactivateProbe(DashboardModel):
+    ok: bool
+    status_code: int
+    error_type: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    resets_at: datetime | None = None
+    resets_in_seconds: float | None = None
+
+
 class AccountReactivateResponse(DashboardModel):
     status: str
+    probe: AccountReactivateProbe | None = None
 
 
 class AccountDeleteResponse(DashboardModel):
