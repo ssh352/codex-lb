@@ -1028,6 +1028,8 @@ body {
 }
 
 .session-id-short {
+  flex: 0 0 8ch;
+  min-width: 8ch;
   width: 8ch;
   overflow: hidden;
   text-overflow: clip;
