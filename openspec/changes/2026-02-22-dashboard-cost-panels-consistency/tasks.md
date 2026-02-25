@@ -4,16 +4,15 @@
 
 - [x] Update panel title + description for the daily cost rollup panel.
 - [x] Set `timeTo: "now/d"` on daily rollup panels so they show completed days.
-- [x] Update the “Today so far” row layout to 4-up stats (`w=6` each).
-- [x] Add “Cost yesterday (USD)” stat panel with the anchored 1d window query.
-- [x] Add “Requests yesterday” stat panel with the anchored 1d window query.
+- [x] Replace the “Today so far: KPIs” list panel with a 2-up KPI row (cost + projected EOD cost).
+- [x] Remove requests from the “Today” KPI row and chart.
+- [x] Replace the in-section cost/hr panel with a “today” rollup chart (cost/hr + projected EOD cost).
 
 ## Validation
 
 - [x] Ensure `observability/grafana/dashboards/codex-lb.json` remains valid JSON.
-- [x] In Grafana Explore, paste the “Cost yesterday” PromQL and confirm it returns values for daily rollups.
 - [ ] Manual Grafana verification (any day, midday):
-  - [ ] “Cost today so far” changes during the day.
-  - [x] “Cost yesterday” is stable and matches the rightmost bar in the daily “Cost/day” panel.
-  - [x] Same correspondence for requests.
-  - [ ] Changing browser timezone shifts both “today” and “yesterday” boundaries consistently.
+  - [ ] “Cost — today so far” changes during the day.
+  - [ ] “Projected EOD cost (run-rate)” renders dashed and changes during the day.
+  - [ ] Chart legend includes only cost/hr + projected EOD cost.
+  - [ ] Changing browser timezone shifts the “today” boundary consistently.

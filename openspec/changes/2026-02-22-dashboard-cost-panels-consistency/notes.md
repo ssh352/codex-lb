@@ -10,13 +10,22 @@ The current dashboard mixes two different time windows:
 
 Both are correct; the dashboard just needs clearer semantics and a direct “yesterday” comparator.
 
-## Query note: anchoring to midnight without Grafana macros
+## Query note: anchoring to midnight
 
 Avoid relying on `start()` in **instant** queries: depending on the query engine path, `start()` may not refer to the
 panel’s `from` time and can effectively behave like “now”.
 
-In this dashboard, the simplest way to make a “yesterday” stat match the daily bar is to reuse the daily query and let
-the stat panel reduce to the last point:
+This change no longer shows a “yesterday” stat in the “Today” section; the daily rollup panel remains the canonical
+source for “completed day” totals.
+
+If a “yesterday” comparator is added later, prefer anchoring with Grafana macros and PromQL `@ <timestamp>` modifiers:
+
+- `sum(increase(codex_lb_proxy_cost_usd_total[1d] @ ${__from:date:seconds}))`
+
+This anchors the “yesterday” window at **today’s midnight** (browser timezone) while the panel range is `now/d → now`.
+
+Fallback (if macro substitution is unavailable in your Grafana/Prometheus path): reuse the daily query and let the stat
+panel reduce to the last point:
 
 - panel time override: `timeFrom: "now-2d/d"`, `timeTo: "now/d"`
 - query: `sum(increase(codex_lb_proxy_cost_usd_total[1d]))` with `interval: "1d"`

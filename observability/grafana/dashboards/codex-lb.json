@@ -1775,146 +1775,272 @@
 	        }
 	      ]
 	    },
-		    {
-		      "id": 32,
-		      "type": "row",
-		      "title": "Today so far (since midnight, browser TZ)",
-		      "gridPos": {
-		        "x": 0,
-		        "y": 124,
-		        "w": 24,
+      {
+        "id": 32,
+        "type": "row",
+        "title": "Today (since 00:00, browser TZ)",
+        "gridPos": {
+          "x": 0,
+          "y": 124,
+          "w": 24,
 		        "h": 1
 		      },
       "collapsed": false,
       "panels": []
     },
-			    {
-			      "id": 33,
-			      "type": "stat",
-			      "title": "Cost today so far (USD)",
-			      "gridPos": {
-			        "x": 0,
-			        "y": 125,
-			        "w": 6,
-			        "h": 6
-			      },
-	      "options": {
-	        "graphMode": "none"
-	      },
-      "hideTimeOverride": true,
-      "timeFrom": "now/d",
-      "targets": [
-        {
-          "refId": "A",
-          "instant": true,
-	          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__range]))"
-        }
-	      ]
-	    },
-				    {
-				      "id": 37,
-				      "type": "stat",
-				      "title": "Cost yesterday (USD)",
-				      "description": "Matches the rightmost completed-day bar in the Cost/day panel.",
-				      "gridPos": {
-				        "x": 6,
-				        "y": 125,
-				        "w": 6,
-			        "h": 6
-			      },
-	      "options": {
-	        "graphMode": "none"
-	      },
-	      "hideTimeOverride": true,
-		      "timeFrom": "now-2d/d",
-		      "timeTo": "now/d",
-		      "targets": [
-		        {
-		          "refId": "A",
-		          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1d]))",
-		          "interval": "1d"
-		        }
-		      ]
-		    },
-			    {
-			      "id": 34,
-			      "type": "stat",
-			      "title": "Requests today so far",
-			      "gridPos": {
-			        "x": 12,
-			        "y": 125,
-			        "w": 6,
-			        "h": 6
-			      },
-	      "options": {
-	        "graphMode": "none"
-	      },
-      "hideTimeOverride": true,
-      "timeFrom": "now/d",
-      "targets": [
-        {
-          "refId": "A",
-          "instant": true,
-	          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[$__range]))"
-        }
-	      ]
-	    },
-				    {
-				      "id": 38,
-				      "type": "stat",
-				      "title": "Requests yesterday",
-				      "description": "Matches the rightmost completed-day bar in the Requests/day panel.",
-				      "gridPos": {
-				        "x": 18,
-				        "y": 125,
-				        "w": 6,
-			        "h": 6
-			      },
-	      "options": {
-	        "graphMode": "none"
-	      },
-	      "hideTimeOverride": true,
-		      "timeFrom": "now-2d/d",
-		      "timeTo": "now/d",
-		      "targets": [
-		        {
-		          "refId": "A",
-		          "expr": "sum(increase(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1d]))",
-		          "interval": "1d"
-		        }
-		      ]
-		    },
-			    {
-			      "id": 35,
-			      "type": "timeseries",
-			      "title": "Cost/hr (USD, total, 1h buckets)",
-		      "gridPos": {
-		        "x": 0,
-		        "y": 131,
-		        "w": 24,
-		        "h": 7
-		      },
-      "hideTimeOverride": true,
-      "timeFrom": "now/d",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "bars",
-            "barAlignment": 0,
-            "spanNulls": false,
-            "fillOpacity": 80,
-            "showPoints": "never"
-          }
+      {
+        "id": 33,
+        "type": "stat",
+        "title": "Cost — today so far",
+        "description": "Since 00:00 (browser timezone).",
+	        "gridPos": {
+	          "x": 0,
+	          "y": 125,
+	          "w": 12,
+	          "h": 4
+	        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value",
+          "wideLayout": false
         },
-        "overrides": []
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Cost"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "currencyUSD"
+                },
+		              {
+		                "id": "decimals",
+		                "value": 2
+		              },
+		              {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "#1d4ed8"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "hideTimeOverride": true,
+        "timeFrom": "now/d",
+        "targets": [
+          {
+            "refId": "A",
+            "instant": true,
+            "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__range]))",
+            "legendFormat": "Cost"
+          }
+        ]
       },
-      "targets": [
-        {
-          "refId": "A",
-	          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h]))",
-          "interval": "1h"
-        }
-      ]
-    }
+	      {
+	        "id": 42,
+	        "type": "stat",
+	        "title": "Projected EOD cost (run-rate)",
+	        "description": "Run-rate estimate: cost-so-far × 86400 ÷ seconds-since-midnight.",
+	        "gridPos": {
+	          "x": 12,
+	          "y": 125,
+	          "w": 12,
+	          "h": 4
+	        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value",
+          "wideLayout": false
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "currencyUSD",
+            "decimals": 2,
+            "color": {
+              "mode": "fixed",
+              "fixedColor": "#f59e0b"
+            }
+          },
+          "overrides": []
+        },
+        "hideTimeOverride": true,
+        "timeFrom": "now/d",
+        "targets": [
+          {
+            "refId": "A",
+            "instant": true,
+            "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__range])) * 86400 / clamp_min(vector($__range_s), 60)",
+            "legendFormat": "Projected EOD cost"
+          }
+        ]
+      },
+	      {
+	        "id": 35,
+	        "type": "timeseries",
+	        "title": "Today: cost/hr + projected EOD cost",
+	        "description": "Hourly buckets since midnight (browser timezone). Projected EOD cost is a run-rate estimate (rate × 86400) and can be noisy.",
+	        "gridPos": {
+	          "x": 0,
+	          "y": 129,
+	          "w": 24,
+          "h": 7
+        },
+	      "hideTimeOverride": true,
+	      "timeFrom": "now/d",
+		      "fieldConfig": {
+		        "defaults": {
+		          "unit": "currencyUSD",
+		          "custom": {
+		            "drawStyle": "line",
+		            "lineWidth": 2,
+		            "fillOpacity": 10,
+		            "showPoints": "never"
+		          }
+		        },
+		        "overrides": [
+		          {
+		            "matcher": {
+		              "id": "byName",
+		              "options": "Cost (USD, 1h)"
+		            },
+		            "properties": [
+		              {
+		                "id": "decimals",
+		                "value": 2
+		              },
+		              {
+		                "id": "color",
+		                "value": {
+		                  "mode": "fixed",
+		                  "fixedColor": "#1d4ed8"
+		                }
+		              },
+		              {
+		                "id": "custom.drawStyle",
+		                "value": "bars"
+		              },
+		              {
+		                "id": "custom.fillOpacity",
+		                "value": 80
+		              },
+		              {
+		                "id": "custom.lineWidth",
+		                "value": 0
+		              },
+		              {
+		                "id": "custom.barAlignment",
+		                "value": 0
+		              },
+		              {
+		                "id": "custom.axisPlacement",
+		                "value": "left"
+		              },
+	              {
+	                "id": "custom.axisLabel",
+	                "value": "USD"
+	              }
+	            ]
+		          },
+		          {
+		            "matcher": {
+		              "id": "byName",
+	              "options": "Projected EOD cost (USD)"
+	            },
+	            "properties": [
+	              {
+	                "id": "decimals",
+	                "value": 2
+	              },
+	              {
+	                "id": "color",
+	                "value": {
+	                  "mode": "fixed",
+	                  "fixedColor": "#f59e0b"
+	                }
+	              },
+	              {
+	                "id": "custom.lineStyle",
+	                "value": {
+	                  "dash": [
+	                    10,
+	                    10
+	                  ],
+	                  "fill": "dash"
+	                }
+	              },
+	              {
+	                "id": "custom.axisPlacement",
+	                "value": "left"
+	              },
+	              {
+	                "id": "custom.axisLabel",
+	                "value": "USD"
+	              }
+	            ]
+	          }
+	        ]
+	      },
+			      "targets": [
+			        {
+			          "refId": "A",
+				          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h]))",
+			          "interval": "1h",
+			          "legendFormat": "Cost (USD, 1h)"
+			        },
+			        {
+			          "refId": "C",
+			          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__rate_interval])) * 86400",
+			          "legendFormat": "Projected EOD cost (USD)"
+			        }
+		      ]
+		    }
   ]
 }
