@@ -428,7 +428,7 @@ def _choose_probe_model_from_logs(recent_request_logs: list[RequestLogRow]) -> s
         if entry.model.strip():
             return entry.model
     # Fallback (overrideable via --probe-model).
-    return "gpt-5.2"
+    return "gpt-5.3-codex"
 
 
 def _render_text_report(report: AccountReport, *, redact: bool) -> str:

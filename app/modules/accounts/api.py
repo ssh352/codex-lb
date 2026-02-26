@@ -131,7 +131,9 @@ async def reactivate_account(
             content=dashboard_error("account_deactivated", "Account requires re-authentication"),
         )
 
-    probe_model = await _latest_success_model_for_account(context.main_session, account_id=account_id) or "gpt-5.2"
+    probe_model = (
+        await _latest_success_model_for_account(context.main_session, account_id=account_id) or "gpt-5.3-codex"
+    )
     probe = await proxy_context.service.probe_compact_responses(account_id=account_id, model=probe_model)
     if not probe.ok:
         resets_at = from_epoch_seconds(probe.resets_at) if probe.resets_at is not None else None

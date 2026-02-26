@@ -57,7 +57,7 @@ Open [localhost:2455](http://localhost:2455) → Add account → Done.
 Add to `~/.codex/config.toml`:
 
 ```toml
-model = "gpt-5.2-codex"
+model = "gpt-5.3-codex"
 model_reasoning_effort = "xhigh"
 model_provider = "codex-lb"
 
@@ -92,11 +92,11 @@ Add the following to `~/.config/opencode/opencode.json`:
         "baseURL": "http://127.0.0.1:2455/v1"
       },
       "models": {
-        "gpt-5.2-codex": { "name": "GPT-5.2 Codex", "reasoning": true, "interleaved": { "field": "reasoning_details" } }
+        "gpt-5.3-codex": { "name": "GPT-5.3 Codex", "reasoning": true, "interleaved": { "field": "reasoning_details" } }
       }
     }
   },
-  "model": "codex-lb/gpt-5.2-codex"
+  "model": "codex-lb/gpt-5.3-codex"
 }
 ```
 
