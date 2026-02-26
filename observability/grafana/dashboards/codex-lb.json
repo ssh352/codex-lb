@@ -143,6 +143,7 @@
       "id": 1,
       "type": "timeseries",
       "title": "Cost/hr (USD, total)",
+      "description": "Total proxy cost burn rate in USD/hour for the selected model filter. Computed from codex_lb_proxy_cost_usd_total using a 1h rate window and multiplied by 3600.",
       "gridPos": {
         "x": 0,
         "y": 0,
@@ -160,6 +161,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "Cost/hr by model (USD, stacked)",
+      "description": "Same as 'Cost/hr (USD, total)' but split by model and stacked so each layer shows that model's USD/hour contribution.",
       "gridPos": {
         "x": 12,
         "y": 0,
@@ -177,6 +179,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "Tokens/min by kind (total)",
+      "description": "Token throughput per minute, split by token kind (input, output, cached_input). Uses a 1h rate window so short spikes are smoothed.",
       "gridPos": {
         "x": 0,
         "y": 8,
@@ -194,6 +197,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "Cache hit % (input tokens, 1h buckets)",
+      "description": "Input-token cache hit rate in percent for 1h buckets. Formula: 100 * cached_input_tokens / input_tokens over each 1h interval.",
       "gridPos": {
         "x": 12,
         "y": 8,
@@ -220,6 +224,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Requests/min by model",
+      "description": "Request throughput per minute, split by model, for the selected API/model filters. Uses a 1h rate window.",
       "gridPos": {
         "x": 0,
         "y": 15,
@@ -237,7 +242,7 @@
 	      "id": 6,
 	      "type": "timeseries",
 	      "title": "Error rate",
-	      "description": "Overall proxy error rate as a percentage over the selected interval (lookback: 1h). Computed as: 100 * sum rate(codex_lb_proxy_requests_total{status=\"error\"}) / sum rate(codex_lb_proxy_requests_total). 0% means no errors; 100% means all requests errored.",
+	      "description": "Overall request error percentage for the selected filters. Formula: 100 * error_request_rate / total_request_rate over a 1h rate window.",
 	      "gridPos": {
 	        "x": 12,
 	        "y": 15,
@@ -263,7 +268,7 @@
 	      "id": 7,
 	      "type": "timeseries",
 	      "title": "Latency p50/p95 (global, s)",
-		"description": "Server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), derived from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this measures total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb network/UI time. Retries/failovers contribute separate samples. PromQL: histogram_quantile over sum by (le) of rate(...[1h]) across selected model/api. p50=median; p95=tail (95% of attempts are faster).",
+		"description": "Global server-side latency inside codex-lb (codex-lb -> upstream -> codex-lb). Shows p50 (median) and p95 (tail). For streaming APIs this measures full stream duration, not time-to-first-token.",
 	      "gridPos": {
 	        "x": 0,
 	        "y": 22,
@@ -305,6 +310,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "Cost/request (avg, USD)",
+      "description": "Average USD per request for the selected filters. Formula: cost_rate / request_rate using 1h rates.",
       "gridPos": {
         "x": 12,
         "y": 22,
@@ -322,7 +328,7 @@
 	      "id": 9,
 	      "type": "timeseries",
 	      "title": "Latency p95 by model (s)",
-		"description": "Per-model p95 (tail) server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this is total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb time; retries/failovers are separate samples. PromQL: histogram_quantile over sum by (model, le) of rate(...[1h]) for selected model/api.",
+		"description": "Per-model p95 latency (tail latency), measured on the server side inside codex-lb. For streaming APIs this is full stream duration.",
 	      "gridPos": {
 	        "x": 0,
 	        "y": 29,
@@ -376,6 +382,7 @@
 	      "id": 10,
 	      "type": "timeseries",
 	      "title": "Top 10 error codes",
+	      "description": "Top 10 error_code series by current occurrence rate, using a 1h rate window. Useful for seeing which failures dominate right now.",
 	      "gridPos": {
 	        "x": 12,
 	        "y": 52,
@@ -394,6 +401,7 @@
       "id": 15,
       "type": "timeseries",
 	      "title": "Top $accounts_top_n_realtime accounts by cost/hr",
+      "description": "Top $accounts_top_n_realtime accounts by cost burn rate (USD/hour), using a 1h rate window. Legend names come from account identity labels.",
       "gridPos": {
         "x": 0,
         "y": 37,
@@ -412,6 +420,7 @@
       "id": 16,
       "type": "timeseries",
 	      "title": "Top $accounts_top_n_realtime accounts by requests/min",
+      "description": "Top $accounts_top_n_realtime accounts by request throughput (requests/min), using a 1h rate window. Legend names come from account identity labels.",
       "gridPos": {
         "x": 12,
         "y": 37,
@@ -430,7 +439,7 @@
 		      "id": 17,
 		      "type": "timeseries",
 		      "title": "Error rate by account (Top 10, %)",
-		      "description": "Per-account proxy error rate as a percentage over the selected interval (lookback: 1h). Computed as: 100 * (sum by (account_id) rate(codex_lb_proxy_account_requests_total{status=\"error\"}) / sum by (account_id) rate(codex_lb_proxy_account_requests_total)). Example: 2.5 means 2.5% of that account’s requests errored. PromQL: topk(10, percent_error) joined with codex_lb_account_identity for a human-friendly display label.",
+		      "description": "Top 10 accounts by request error percentage. Formula per account: 100 * account_error_request_rate / account_total_request_rate over a 1h rate window.",
 		      "gridPos": {
 		        "x": 0,
 		        "y": 45,
@@ -457,6 +466,7 @@
       "id": 18,
       "type": "timeseries",
       "title": "Routing: selections/min by outcome",
+      "description": "How often the load balancer selects an account, split by pool and selection outcome. Shown as selections per minute from a 1h rate window.",
       "gridPos": {
         "x": 12,
         "y": 45,
@@ -474,7 +484,7 @@
       "id": 19,
       "type": "timeseries",
       "title": "Routing: mark events/min",
-      "description": "How often the load balancer \"marks\" an account due to upstream signals. A mark is a state update on a specific account (e.g., set/extend cooldown until reset, mark quota exceeded, record a permanent failure code, or record an error) so routing can avoid/select it appropriately. This panel plots sum by (event) of rate(codex_lb_lb_mark_total{event,account_id}) and converts to per-minute. event: rate_limit (includes usage_limit_reached), quota_exceeded, permanent_failure, error.",
+      "description": "How often routing logic marks accounts, split by event type. Events include rate_limit (including usage_limit_reached), quota_exceeded, permanent_failure, and error.",
       "gridPos": {
         "x": 0,
         "y": 52,
@@ -492,7 +502,7 @@
 	      "id": 20,
 	      "type": "timeseries",
 	      "title": "Latency p50 by model (s)",
-		"description": "Per-model p50 (median) server-side proxy round-trip time per attempt (codex-lb -> upstream -> codex-lb), from codex_lb_proxy_latency_ms_bucket (ms->s). For streaming APIs, this is total stream duration until completion/failure (not time-to-first-token). Excludes client->codex-lb time; retries/failovers are separate samples. PromQL: histogram_quantile over sum by (model, le) of rate(...[1h]) for selected model/api.",
+		"description": "Per-model p50 latency (median latency), measured on the server side inside codex-lb. For streaming APIs this is full stream duration.",
 	      "gridPos": {
 	        "x": 12,
 	        "y": 29,
@@ -529,6 +539,7 @@
       "id": 21,
       "type": "timeseries",
       "title": "Cost/hr by account (selected)",
+      "description": "Cost burn rate (USD/hour) for the currently selected accounts. Uses a 1h rate window and account identity labels.",
       "gridPos": {
         "x": 0,
         "y": 59,
@@ -547,6 +558,7 @@
       "id": 22,
       "type": "timeseries",
       "title": "Requests/min by account (selected)",
+      "description": "Request throughput (requests/min) for the currently selected accounts. Uses a 1h rate window and account identity labels.",
       "gridPos": {
         "x": 12,
         "y": 59,
@@ -565,7 +577,7 @@
       "id": 36,
       "type": "timeseries",
       "title": "Usage refresh failures/min (status + phase)",
-      "description": "Background usage polling failures. phase=initial_fetch is first attempt; phase=post_refresh_retry is retry after 401-triggered token refresh.",
+      "description": "Usage refresh failures per minute, grouped by HTTP status and phase. phase=initial_fetch is first attempt; phase=post_refresh_retry is retry after token refresh.",
       "gridPos": {
         "x": 0,
         "y": 66,
@@ -584,6 +596,7 @@
       "id": 25,
       "type": "timeseries",
       "title": "Retries/min (by error class)",
+      "description": "Retry attempts per minute, grouped by retry error class, using a 1h rate window.",
       "gridPos": {
         "x": 0,
         "y": 74,
@@ -601,7 +614,7 @@
 				      "id": 26,
 				      "type": "table",
 				      "title": "Estimated Weekly Quota (USD, 7d)",
-						      "description": "Rolling per-account estimate from SQLite. Quota ≈ Spend / (used_pp/100), where Spend is proxy cost from request_logs and used_pp is the latest secondary usage_history.used_percent for the current weekly cycle (clamped to [0,100]); both are clipped to the last 7 days. Use $secondary_quota_min_pp to suppress thin-signal accounts. Note: the PromQL wraps the label_join() input in extra parentheses for readability only (no semantic change).",
+						      "description": "Estimated weekly quota per account from recent observed behavior. Uses last-7-day spend plus secondary usage percent to infer quota; $secondary_quota_min_pp filters low-signal accounts.",
 					      "gridPos": {
 					        "x": 12,
 					        "y": 74,
@@ -925,6 +938,7 @@
       "id": 27,
       "type": "row",
       "title": "Daily rollups (requires Prometheus running)",
+      "description": "Daily rollup section. Panels below focus on completed-day totals (not in-progress partial days).",
       "gridPos": {
         "x": 0,
         "y": 81,
@@ -938,7 +952,7 @@
 				      "id": 28,
 				      "type": "timeseries",
 				      "title": "Cost/day (USD, completed days + 7d avg)",
-				      "description": "Daily bars are completed days (increase(...[1d]) evaluated at 1d steps). The rightmost bar is usually yesterday. Compare with the \"Cost yesterday (USD)\" stat.",
+				      "description": "Daily total cost in USD for completed days, plus a 7-day average trend line. Rightmost bar is typically yesterday.",
 				      "gridPos": {
 				        "x": 0,
 				        "y": 82,
@@ -1000,7 +1014,7 @@
 		      "id": 29,
 		      "type": "table",
 				      "title": "Cost yesterday (USD, top $accounts_top_n accounts)",
-			      "description": "Top $accounts_top_n accounts by cost for the last completed day (yesterday, browser TZ). Account text is colored by plan type; the value bar is value-colored.",
+			      "description": "Top $accounts_top_n accounts by yesterday's total cost (last completed day in browser timezone).",
 		      "gridPos": {
 		        "x": 12,
 		        "y": 82,
@@ -1184,6 +1198,7 @@
 			      "id": 30,
 			      "type": "timeseries",
 			      "title": "Requests/day (total + 7d avg)",
+      "description": "Daily total requests for completed days, plus a 7-day average trend line. Rightmost bar is typically yesterday.",
 			      "gridPos": {
 			        "x": 0,
 			        "y": 89,
@@ -1245,7 +1260,7 @@
 		      "id": 31,
 		      "type": "table",
 				      "title": "Requests yesterday (top $accounts_top_n accounts)",
-			      "description": "Top $accounts_top_n accounts by requests for the last completed day (yesterday, browser TZ). Account text is colored by plan type; the value bar is value-colored.",
+			      "description": "Top $accounts_top_n accounts by yesterday's total requests (last completed day in browser timezone).",
 		      "gridPos": {
 		        "x": 12,
 		        "y": 96,
@@ -1429,7 +1444,7 @@
 		      "id": 39,
 		      "type": "table",
 			      "title": "Cost (USD, 30d total, top $accounts_top_n accounts)",
-			      "description": "Top $accounts_top_n accounts by total cost over the last 30 completed days. Account text is colored by plan type; the value bar is value-colored.",
+			      "description": "Top $accounts_top_n accounts by total cost over the last 30 completed days.",
 		      "gridPos": {
 		        "x": 0,
 		        "y": 110,
@@ -1613,7 +1628,7 @@
 		      "id": 40,
 		      "type": "table",
 			      "title": "Requests (30d total, top $accounts_top_n accounts)",
-			      "description": "Top $accounts_top_n accounts by total requests over the last 30 completed days. Account text is colored by plan type; the value bar is value-colored.",
+			      "description": "Top $accounts_top_n accounts by total requests over the last 30 completed days.",
 		      "gridPos": {
 		        "x": 12,
 		        "y": 110,
@@ -1797,6 +1812,7 @@
         "id": 32,
         "type": "row",
         "title": "Today (since 00:00, browser TZ)",
+        "description": "Today-only section anchored to local midnight (browser timezone).",
         "gridPos": {
           "x": 0,
           "y": 124,
@@ -1810,7 +1826,7 @@
         "id": 33,
         "type": "stat",
         "title": "Cost — today so far",
-        "description": "Since 00:00 (browser timezone).",
+        "description": "Total cost accumulated so far today since local midnight (browser timezone).",
 	        "gridPos": {
 	          "x": 0,
 	          "y": 125,
@@ -1886,7 +1902,7 @@
 	        "id": 42,
 	        "type": "stat",
 	        "title": "Projected EOD cost (run-rate)",
-	        "description": "Run-rate estimate: cost-so-far × 86400 ÷ seconds-since-midnight.",
+	        "description": "Projected end-of-day cost from current pace since midnight (run-rate estimate).",
 	        "gridPos": {
 	          "x": 12,
 	          "y": 125,
@@ -1944,7 +1960,7 @@
 	        "id": 35,
 	        "type": "timeseries",
 	        "title": "Today: cost/hr + projected EOD cost",
-	        "description": "Hourly buckets since midnight (browser timezone). Projected EOD cost is a run-rate estimate (rate × 86400) and can be noisy.",
+	        "description": "Hourly cost for today plus projected end-of-day (EOD) cost. Projection is run-rate based and can swing early in the day.",
 	        "gridPos": {
 	          "x": 0,
 	          "y": 129,
