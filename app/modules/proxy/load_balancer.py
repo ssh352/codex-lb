@@ -15,6 +15,7 @@ from app.core.balancer import (
     handle_permanent_failure,
     handle_quota_exceeded,
     handle_rate_limit,
+    handle_usage_limit_reached,
     select_account,
 )
 from app.core.balancer.debug import ineligibility_reason
@@ -39,6 +40,7 @@ class RuntimeState:
     last_error_at: float | None = None
     last_selected_at: float | None = None
     error_count: int = 0
+    usage_limit_error_count: int = 0
 
 
 @dataclass
@@ -743,6 +745,42 @@ class LoadBalancer:
         get_metrics().observe_lb_mark(event="rate_limit", account_id=account.id)
         self._snapshot = None
 
+    async def mark_usage_limit_reached(self, account: Account, error: UpstreamError) -> None:
+        settings = get_settings()
+        weekly_exhausted = False
+        snapshot = self._snapshot
+        if snapshot is not None:
+            secondary = snapshot.latest_secondary.get(account.id)
+            weekly_exhausted = (
+                secondary is not None and float(secondary.used_percent) >= 100.0 and secondary.reset_at is not None
+            )
+        state = self._state_for(account)
+        handle_usage_limit_reached(
+            state,
+            error,
+            min_cooldown_seconds=settings.usage_limit_reached_min_cooldown_seconds,
+            max_initial_cooldown_seconds=settings.usage_limit_reached_max_initial_cooldown_seconds,
+            escalate_streak_threshold=settings.usage_limit_reached_escalate_streak_threshold,
+            persist_reset_threshold_seconds=settings.usage_limit_reached_persist_reset_threshold_seconds,
+            weekly_exhausted=weekly_exhausted,
+        )
+        logger.info(
+            "lb_mark event=usage_limit_reached account=%s[%s] error_count=%s ulr_count=%s "
+            "cooldown_until=%s reset_at=%s weekly_exhausted=%s request_id=%s",
+            account.email,
+            account.id[:3],
+            state.error_count,
+            state.usage_limit_error_count,
+            _dt_iso(_dt_from_epoch(state.cooldown_until)),
+            _dt_iso(_dt_from_epoch(state.reset_at)),
+            weekly_exhausted,
+            get_request_id(),
+        )
+        async with self._repo_factory() as repos:
+            await self._sync_state(repos.accounts, account, state)
+        get_metrics().observe_lb_mark(event="usage_limit_reached", account_id=account.id)
+        self._snapshot = None
+
     async def mark_quota_exceeded(self, account: Account, error: UpstreamError) -> None:
         state = self._state_for(account)
         handle_quota_exceeded(state, error)
@@ -787,6 +825,7 @@ class LoadBalancer:
             last_error_at=runtime.last_error_at,
             last_selected_at=runtime.last_selected_at,
             error_count=runtime.error_count,
+            usage_limit_error_count=runtime.usage_limit_error_count,
             deactivation_reason=account.deactivation_reason,
         )
 
@@ -801,6 +840,7 @@ class LoadBalancer:
         runtime.cooldown_until = state.cooldown_until
         runtime.last_error_at = state.last_error_at
         runtime.error_count = state.error_count
+        runtime.usage_limit_error_count = state.usage_limit_error_count
 
         reset_at_int = int(state.reset_at) if state.reset_at else None
         status_changed = account.status != state.status
@@ -944,6 +984,7 @@ def _state_from_account(
         last_error_at=runtime.last_error_at,
         last_selected_at=runtime.last_selected_at,
         error_count=runtime.error_count,
+        usage_limit_error_count=runtime.usage_limit_error_count,
         deactivation_reason=account.deactivation_reason,
     )
 

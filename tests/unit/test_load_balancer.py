@@ -7,6 +7,7 @@ from app.core.balancer import (
     handle_permanent_failure,
     handle_quota_exceeded,
     handle_rate_limit,
+    handle_usage_limit_reached,
     select_account,
 )
 from app.core.usage.quota import apply_usage_quota
@@ -306,6 +307,105 @@ def test_handle_rate_limit_sets_reset_at_from_upstream_reset(monkeypatch):
     assert state.cooldown_until == pytest.approx(now + 0.25)
 
 
+def test_handle_usage_limit_reached_enforces_min_cooldown_without_hints(monkeypatch):
+    now = 1_700_000_000.0
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    monkeypatch.setattr("app.core.balancer.logic.backoff_seconds", lambda _: 0.2)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
+    handle_usage_limit_reached(
+        state,
+        {"message": "The usage limit has been reached"},
+        min_cooldown_seconds=60.0,
+        max_initial_cooldown_seconds=300.0,
+        escalate_streak_threshold=3,
+        persist_reset_threshold_seconds=300.0,
+        weekly_exhausted=False,
+    )
+    assert state.status == AccountStatus.RATE_LIMITED
+    assert state.usage_limit_error_count == 1
+    assert state.reset_at == pytest.approx(now + 60.0)
+    assert state.cooldown_until == pytest.approx(now + 60.0)
+
+
+def test_handle_usage_limit_reached_caps_initial_long_reset_hint(monkeypatch):
+    now = 1_700_000_000.0
+    reset_at = int(now + 3600)
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    monkeypatch.setattr("app.core.balancer.logic.backoff_seconds", lambda _: 0.2)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
+    handle_usage_limit_reached(
+        state,
+        {"message": "The usage limit has been reached", "resets_at": reset_at},
+        min_cooldown_seconds=60.0,
+        max_initial_cooldown_seconds=300.0,
+        escalate_streak_threshold=3,
+        persist_reset_threshold_seconds=300.0,
+        weekly_exhausted=False,
+    )
+    assert state.status == AccountStatus.RATE_LIMITED
+    assert state.usage_limit_error_count == 1
+    assert state.reset_at == pytest.approx(now + 300.0)
+
+
+def test_handle_usage_limit_reached_escalates_to_reset_hint_on_repeats(monkeypatch):
+    now = 1_700_000_000.0
+    reset_at = int(now + 3600)
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    monkeypatch.setattr("app.core.balancer.logic.backoff_seconds", lambda _: 0.2)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
+    for _ in range(3):
+        handle_usage_limit_reached(
+            state,
+            {"message": "The usage limit has been reached", "resets_at": reset_at},
+            min_cooldown_seconds=60.0,
+            max_initial_cooldown_seconds=300.0,
+            escalate_streak_threshold=3,
+            persist_reset_threshold_seconds=300.0,
+            weekly_exhausted=False,
+        )
+    assert state.status == AccountStatus.RATE_LIMITED
+    assert state.usage_limit_error_count == 3
+    assert state.reset_at == pytest.approx(float(reset_at))
+
+
+def test_handle_usage_limit_reached_escalates_immediately_when_weekly_exhausted(monkeypatch):
+    now = 1_700_000_000.0
+    reset_at = int(now + 3600)
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    monkeypatch.setattr("app.core.balancer.logic.backoff_seconds", lambda _: 0.2)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
+    handle_usage_limit_reached(
+        state,
+        {"message": "The usage limit has been reached", "resets_at": reset_at},
+        min_cooldown_seconds=60.0,
+        max_initial_cooldown_seconds=300.0,
+        escalate_streak_threshold=3,
+        persist_reset_threshold_seconds=300.0,
+        weekly_exhausted=True,
+    )
+    assert state.status == AccountStatus.RATE_LIMITED
+    assert state.usage_limit_error_count == 1
+    assert state.reset_at == pytest.approx(float(reset_at))
+
+
+def test_handle_usage_limit_reached_uses_retry_after_when_present(monkeypatch):
+    now = 1_700_000_000.0
+    monkeypatch.setattr("app.core.balancer.logic.time.time", lambda: now)
+    monkeypatch.setattr("app.core.balancer.logic.backoff_seconds", lambda _: 0.2)
+    state = AccountState("a", AccountStatus.ACTIVE, used_percent=5.0)
+    handle_usage_limit_reached(
+        state,
+        {"message": "Try again in 1.5s"},
+        min_cooldown_seconds=60.0,
+        max_initial_cooldown_seconds=300.0,
+        escalate_streak_threshold=3,
+        persist_reset_threshold_seconds=300.0,
+        weekly_exhausted=False,
+    )
+    assert state.status == AccountStatus.RATE_LIMITED
+    assert state.reset_at == pytest.approx(now + 1.5)
+
+
 def test_select_account_skips_cooldown_until_expired():
     now = 1_700_000_000.0
     states = [
@@ -362,6 +462,24 @@ def test_apply_usage_quota_sets_fallback_reset_for_primary_window(monkeypatch):
     assert used_percent == 100.0
     assert reset_at is not None
     assert reset_at == pytest.approx(now + 60.0)
+
+
+def test_apply_usage_quota_forces_quota_exceeded_on_secondary_exhaustion(monkeypatch):
+    now = 1_700_000_000.0
+    secondary_reset = int(now + 7 * 24 * 60 * 60)
+    monkeypatch.setattr("app.core.usage.quota.time.time", lambda: now)
+    status, used_percent, reset_at = apply_usage_quota(
+        status=AccountStatus.ACTIVE,
+        primary_used=0.0,
+        primary_reset=None,
+        primary_window_minutes=None,
+        runtime_reset=None,
+        secondary_used=100.0,
+        secondary_reset=secondary_reset,
+    )
+    assert status == AccountStatus.QUOTA_EXCEEDED
+    assert used_percent == 100.0
+    assert reset_at == secondary_reset
 
 
 def test_handle_quota_exceeded_sets_used_percent():

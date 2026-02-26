@@ -74,6 +74,7 @@ class AccountState:
     last_error_at: float | None = None
     last_selected_at: float | None = None
     error_count: int = 0
+    usage_limit_error_count: int = 0
     deactivation_reason: str | None = None
 
 
@@ -102,6 +103,7 @@ def select_account(
             if state.reset_at and current >= state.reset_at:
                 state.status = AccountStatus.ACTIVE
                 state.error_count = 0
+                state.usage_limit_error_count = 0
                 state.reset_at = None
             else:
                 continue
@@ -109,6 +111,7 @@ def select_account(
             if state.reset_at and current >= state.reset_at:
                 state.status = AccountStatus.ACTIVE
                 state.used_percent = 0.0
+                state.usage_limit_error_count = 0
                 state.reset_at = None
             else:
                 continue
@@ -116,6 +119,7 @@ def select_account(
             state.cooldown_until = None
             state.last_error_at = None
             state.error_count = 0
+            state.usage_limit_error_count = 0
         if state.cooldown_until and current < state.cooldown_until:
             continue
         if state.error_count >= 3:
@@ -280,6 +284,56 @@ def handle_rate_limit(state: AccountState, error: UpstreamError) -> None:
     # `select_account()` only auto-clears RATE_LIMITED when `reset_at` is set and in the past.
     if state.reset_at is None:
         state.reset_at = float(state.cooldown_until)
+
+
+def handle_usage_limit_reached(
+    state: AccountState,
+    error: UpstreamError,
+    *,
+    min_cooldown_seconds: float,
+    max_initial_cooldown_seconds: float,
+    escalate_streak_threshold: int,
+    persist_reset_threshold_seconds: float,
+    weekly_exhausted: bool,
+) -> None:
+    current = time.time()
+    state.status = AccountStatus.RATE_LIMITED
+    state.error_count += 1
+    state.last_error_at = current
+
+    reset_at_hint = _extract_reset_at(error)
+    delay_to_reset: float | None = None
+    if reset_at_hint is not None:
+        delay_to_reset = max(0.0, float(reset_at_hint) - current)
+
+    message = error.get("message")
+    retry_delay = parse_retry_after(message) if message else None
+    backoff_delay = backoff_seconds(state.error_count)
+
+    if reset_at_hint is None and retry_delay is None:
+        state.usage_limit_error_count += 1
+        delay = max(float(min_cooldown_seconds), float(backoff_delay))
+        state.reset_at = current + delay
+        state.cooldown_until = state.reset_at
+        return
+
+    if reset_at_hint is not None and delay_to_reset is not None:
+        long_reset = delay_to_reset >= float(persist_reset_threshold_seconds)
+        if long_reset:
+            state.usage_limit_error_count += 1
+            if weekly_exhausted or state.usage_limit_error_count >= int(escalate_streak_threshold):
+                state.reset_at = float(reset_at_hint)
+            else:
+                state.reset_at = current + float(max_initial_cooldown_seconds)
+        else:
+            state.reset_at = float(reset_at_hint)
+        state.cooldown_until = state.reset_at
+        return
+
+    # Retry delay exists (message-based), but no upstream reset hint.
+    delay = max(float(retry_delay or 0.0), float(backoff_delay))
+    state.reset_at = current + delay
+    state.cooldown_until = state.reset_at
 
 
 def handle_quota_exceeded(state: AccountState, error: UpstreamError) -> None:

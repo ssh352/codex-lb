@@ -26,6 +26,7 @@ class _FakeLoadBalancer(LoadBalancer):
         self._index = 0
         self.select_calls: list[_SelectCall] = []
         self.mark_rate_limit_calls: list[str] = []
+        self.mark_usage_limit_reached_calls: list[str] = []
 
     def invalidate_snapshot(self) -> None:
         return
@@ -46,6 +47,10 @@ class _FakeLoadBalancer(LoadBalancer):
     async def mark_rate_limit(self, account: Account, error: UpstreamError) -> None:
         del error
         self.mark_rate_limit_calls.append(account.id)
+
+    async def mark_usage_limit_reached(self, account: Account, error: UpstreamError) -> None:
+        del error
+        self.mark_usage_limit_reached_calls.append(account.id)
 
     async def mark_quota_exceeded(self, account: Account, error: UpstreamError) -> None:
         del error
@@ -140,7 +145,7 @@ async def test_streaming_retries_across_accounts_on_retryable_http_error() -> No
 
     lb = cast(_FakeLoadBalancer, service._load_balancer)
     assert [call.reallocate_sticky for call in lb.select_calls] == [False, True]
-    assert lb.mark_rate_limit_calls == ["acc1"]
+    assert lb.mark_usage_limit_reached_calls == ["acc1"]
 
 
 async def test_streaming_does_not_retry_after_emitting_output() -> None:
@@ -186,7 +191,7 @@ async def test_streaming_does_not_retry_after_emitting_output() -> None:
 
     lb = cast(_FakeLoadBalancer, service._load_balancer)
     assert [call.reallocate_sticky for call in lb.select_calls] == [False]
-    assert lb.mark_rate_limit_calls == ["acc1"]
+    assert lb.mark_usage_limit_reached_calls == ["acc1"]
 
 
 async def test_streaming_propagates_retryable_http_error_when_no_failover_accounts() -> None:

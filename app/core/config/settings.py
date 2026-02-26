@@ -141,6 +141,17 @@ class Settings(BaseSettings):
     startup_log_config: bool = False
     startup_log_env: bool = False
     metrics_account_identity_mode: Literal["email", "account_id"] = "email"
+    # `usage_limit_reached` lockout policy.
+    #
+    # Upstream often emits `usage_limit_reached` without a usable retry hint (no "Try again in …"),
+    # in which case the generic backoff starts at ~0.2s and can cause rapid re-selection loops.
+    #
+    # These settings bound that behavior while keeping `usage_limit_reached` rate-limit-like (not
+    # immediately quota-exceeded) unless local telemetry confirms weekly exhaustion.
+    usage_limit_reached_min_cooldown_seconds: float = Field(default=60.0, ge=0)
+    usage_limit_reached_max_initial_cooldown_seconds: float = Field(default=300.0, ge=0)
+    usage_limit_reached_escalate_streak_threshold: int = Field(default=3, ge=1)
+    usage_limit_reached_persist_reset_threshold_seconds: float = Field(default=300.0, ge=0)
 
     @field_validator("database_url")
     @classmethod

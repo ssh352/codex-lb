@@ -1102,7 +1102,10 @@ class ProxyService:
         # account status. This matches upstream behavior and keeps codex-lb status semantics stable:
         # `quota_exceeded` is reserved for explicit quota error codes and/or confirmed weekly
         # (secondary window) exhaustion.
-        if code in {"rate_limit_exceeded", "usage_limit_reached"}:
+        if code == "usage_limit_reached":
+            await self._load_balancer.mark_usage_limit_reached(account, error)
+            return
+        if code == "rate_limit_exceeded":
             await self._load_balancer.mark_rate_limit(account, error)
             return
         if code in {"insufficient_quota", "usage_not_included", "quota_exceeded"}:
