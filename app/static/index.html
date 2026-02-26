@@ -550,32 +550,21 @@
 			                  <span class="status-pill" :class="focusedAccount.status"
 			                    x-text="statusLabel(focusedAccount.status)"></span>
 			                </div>
-			                <template x-if="focusedAccount.plan !== 'free' || (focusedAccount.status === 'limited' && focusedAccount.statusResetAt)">
+			                <template x-if="focusedAccount.status === 'limited' || focusedAccount.status === 'exceeded'">
+			                  <div><span>Blocked until</span><strong
+			                      :title="formatEffectiveRetryTitle(focusedAccount.statusResetAt, 'When codex-lb will consider this account eligible for routing again (effective max of stored block time and relevant usage reset).')"
+			                      x-text="formatQuotaResetLabel(focusedAccount.statusResetAt)"></strong></div>
+			                </template>
+			                <template x-if="focusedAccount.plan !== 'free'">
 			                  <div><span
-			                      x-text="focusedAccount.status === 'limited' && focusedAccount.statusResetAt
-			                        ? `Retry at (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`
-			                        : `Rate limit reset (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></span><strong
-			                      :title="focusedAccount.status === 'limited' && focusedAccount.statusResetAt
-			                        ? formatEffectiveRetryTitle(focusedAccount.statusResetAt, 'Effective retry time for routing (max of persisted block hint and primary window reset).')
-			                        : formatDateTimeTitle(focusedAccount.resetAtPrimary)"
-			                      x-text="formatQuotaResetLabel(
-			                        focusedAccount.status === 'limited' && focusedAccount.statusResetAt
-			                          ? focusedAccount.statusResetAt
-			                          : focusedAccount.resetAtPrimary
-			                      )"></strong></div>
+			                      x-text="`Rate limit reset (${formatWindowLabel('primary', dashboardData.usage.primary.windowMinutes)})`"></span><strong
+			                      :title="formatDateTimeTitle(focusedAccount.resetAtPrimary)"
+			                      x-text="formatQuotaResetLabel(focusedAccount.resetAtPrimary)"></strong></div>
 			                </template>
 			                <div><span
-			                    x-text="focusedAccount.status === 'exceeded' && focusedAccount.statusResetAt
-			                      ? `Retry at (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`
-			                      : `Quota reset (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`"></span><strong
-			                    :title="focusedAccount.status === 'exceeded' && focusedAccount.statusResetAt
-			                      ? formatEffectiveRetryTitle(focusedAccount.statusResetAt, 'Effective retry time for routing (max of persisted block hint and secondary window reset).')
-			                      : formatDateTimeTitle(focusedAccount.resetAtSecondary)"
-			                    x-text="formatQuotaResetLabel(
-			                      focusedAccount.status === 'exceeded' && focusedAccount.statusResetAt
-			                        ? focusedAccount.statusResetAt
-			                        : focusedAccount.resetAtSecondary
-			                    )"></strong></div>
+			                    x-text="`Quota reset (${formatWindowLabel('secondary', dashboardData.usage.secondary.windowMinutes)})`"></span><strong
+			                    :title="formatDateTimeTitle(focusedAccount.resetAtSecondary)"
+			                    x-text="formatQuotaResetLabel(focusedAccount.resetAtSecondary)"></strong></div>
 			              </div>
 	
 		              <div class="split-stack" style="margin-top: 12px">
