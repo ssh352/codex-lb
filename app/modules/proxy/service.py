@@ -1099,9 +1099,14 @@ class ProxyService:
 
     async def _handle_stream_error(self, account: Account, error: UpstreamError, code: str) -> None:
         # Upstream `usage_limit_reached` is treated as rate-limit-like (not quota-exceeded) for
-        # account status. This matches upstream behavior and keeps codex-lb status semantics stable:
-        # `quota_exceeded` is reserved for explicit quota error codes and/or confirmed weekly
-        # (secondary window) exhaustion.
+        # account status. This keeps status semantics stable:
+        # - `quota_exceeded` is reserved for explicit quota-style error codes, and/or
+        # - locally confirmed weekly (secondary window) exhaustion.
+        #
+        # Operator note: some free-plan accounts can present with a reset boundary that is very close
+        # to the secondary reset timestamp, and may therefore look "quota-like" in dashboards. This
+        # code path intentionally keeps those accounts as `RATE_LIMITED` unless quota conditions above
+        # are met.
         if code == "usage_limit_reached":
             await self._load_balancer.mark_usage_limit_reached(account, error)
             return

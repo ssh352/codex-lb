@@ -30,6 +30,10 @@ def apply_usage_quota(
             # This is intentionally distinct from upstream "usage limit reached" signals, which
             # are treated as rate-limit-like and typically persist as `RATE_LIMITED` unless the
             # usage meter confirms exhaustion.
+            #
+            # Important: reset-boundary alignment alone (for example, `accounts.reset_at` landing
+            # near the secondary reset on some free accounts) is not enough to classify as quota
+            # exhaustion; secondary usage must actually reach 100%.
             status = AccountStatus.QUOTA_EXCEEDED
             used_percent = 100.0
             if secondary_reset is not None:
