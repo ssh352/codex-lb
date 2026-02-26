@@ -235,6 +235,9 @@ class ProxyService:
         request_id = ensure_request_id()
         sticky_key = _sticky_key_from_compact_payload(payload)
         prompt_cache_key_hash = _maybe_prompt_cache_key_hash(sticky_key)
+        # Codex diagnostic headers are best-effort and can be frequently absent in practice (even for Codex CLI).
+        # When `x-codex-session-id` is missing, we fall back to treating a UUID-shaped `prompt_cache_key`
+        # as the effective session id for request-log correlation.
         codex_session_id = self._optional_header_value(filtered, "x-codex-session-id") or _fallback_codex_session_id(
             sticky_key
         )
@@ -855,6 +858,9 @@ class ProxyService:
         access_token = self._encryptor.decrypt(account.access_token_encrypted)
         account_id = _header_account_id(account.chatgpt_account_id)
         sticky_key = _sticky_key_from_payload(payload)
+        # Codex diagnostic headers are best-effort and can be frequently absent in practice (even for Codex CLI).
+        # When `x-codex-session-id` is missing, we fall back to treating a UUID-shaped `prompt_cache_key`
+        # as the effective session id for request-log correlation.
         codex_session_id = self._optional_header_value(headers, "x-codex-session-id") or _fallback_codex_session_id(
             sticky_key
         )
@@ -1270,6 +1276,9 @@ def _interesting_header_keys(headers: Mapping[str, str]) -> list[str]:
 
 
 def _sticky_key_from_payload(payload: ResponsesRequest) -> str | None:
+    # `prompt_cache_key` is provided by the client (e.g. Codex) and is used as the proxy sticky key
+    # to keep a given thread/conversation routed to a consistent upstream account. codex-lb does not
+    # generate this value, and the upstream ChatGPT backend does not return it.
     value = payload.prompt_cache_key
     if not value:
         return None
@@ -1278,6 +1287,8 @@ def _sticky_key_from_payload(payload: ResponsesRequest) -> str | None:
 
 
 def _sticky_key_from_compact_payload(payload: ResponsesCompactRequest) -> str | None:
+    # Same as `_sticky_key_from_payload()`, but for the compact endpoint which carries `prompt_cache_key`
+    # via `model_extra`. This value is client-supplied and used only for stickiness/correlation.
     if not payload.model_extra:
         return None
     value = payload.model_extra.get("prompt_cache_key")

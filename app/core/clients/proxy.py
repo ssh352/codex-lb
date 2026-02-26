@@ -37,6 +37,11 @@ IGNORE_INBOUND_HEADERS = {
     "true-client-ip",
     # Internal codex-lb routing controls (never forward to upstream).
     "x-codex-lb-force-account-id",
+    # Note: we intentionally do NOT drop Codex diagnostic headers such as:
+    # - `x-codex-session-id`
+    # - `x-codex-conversation-id`
+    # They are used only for request logging/correlation and may or may not be present depending on
+    # the Codex client/version/route.
 }
 
 _ERROR_TYPE_CODE_MAP = {
