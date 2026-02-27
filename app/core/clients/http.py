@@ -50,9 +50,18 @@ async def init_http_client() -> HttpClient:
     # reusing stale connections, at the cost of more frequent TCP/TLS handshakes.
     #
     # codex-lb treats these as upstream transport failures on the streaming path and surfaces them
-    # to clients as "upstream_unavailable" (and stores the error message for debugging). Occasional
-    # occurrences are expected; if they become frequent, first try bypassing proxies for upstream
-    # hosts via NO_PROXY (e.g. chatgpt.com, auth.openai.com) or unset proxy env vars.
+    # to clients as "upstream_unavailable" (and stores the error message for debugging).
+    #
+    # Triage note:
+    # - Errors like RECORD_LAYER_FAILURE / ECONNRESET / "Server disconnected" usually indicate
+    #   proxy or network path instability, not a bad ChatGPT login.
+    # - Re-authenticating or switching login typically does not fix those transport errors.
+    # - Login changes are mainly relevant for auth/quota failures (e.g. 401, invalid_auth,
+    #   usage_limit_reached).
+    #
+    # Occasional transport failures are expected; if they become frequent, first try bypassing
+    # proxies for upstream hosts via NO_PROXY (e.g. chatgpt.com, auth.openai.com) or unset
+    # proxy env vars.
     settings = get_settings()
     # `enable_cleanup_closed` is ignored on newer Python patch releases and
     # triggers an aiohttp DeprecationWarning. Keep the option only on runtimes

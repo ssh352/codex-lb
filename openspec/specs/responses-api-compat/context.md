@@ -63,6 +63,12 @@ Non-streaming request/response:
 - Pre-release: run unit/integration tests and optional OpenAI client compatibility tests.
 - Smoke tests: stream a response, validate non-stream responses, and verify error envelopes.
 - Post-deploy: monitor `no_accounts`, `stream_incomplete`, and `upstream_unavailable`.
+- Quick triage for `upstream_unavailable`:
+  - Messages like `RECORD_LAYER_FAILURE`, `Connection reset by peer`, or `Server disconnected`
+    are usually transport path issues (proxy/VPN/NAT/network) rather than account auth problems.
+  - Switching/re-importing ChatGPT login usually does not resolve those transport errors.
+  - Login/account actions are mainly for auth/quota failures (for example `401`/`invalid_api_key`,
+    `invalid_auth`, `auth_refresh_failed`, `usage_limit_reached`).
 - If you see `502` with `upstream_unavailable` and a message like `Timeout on reading data from socket` on `/responses/compact`, increase the upstream compact timeout:
   - `CODEX_LB_UPSTREAM_COMPACT_TIMEOUT_SECONDS` (default `300`)
 - Read-timeout on `/responses/compact` means: the proxy connected and sent the request upstream, but did not
