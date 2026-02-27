@@ -197,7 +197,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "Cache hit % (input tokens, 1h buckets)",
-      "description": "Input-token cache hit rate in percent for 1h buckets. Formula: 100 * cached_input_tokens / input_tokens over each 1h interval.",
+      "description": "Input-token cache hit rate in percent for 1h buckets. Formula: 100 * cached_input_tokens / input_tokens over each 1h interval. Zero-input windows render as a gap.",
       "gridPos": {
         "x": 12,
         "y": 8,
@@ -207,7 +207,7 @@
       "targets": [
         {
           "refId": "A",
-	          "expr": "100 * sum(increase(codex_lb_proxy_tokens_total{kind=\"cached_input\",model=~\"$model\"}[1h])) / clamp_min(sum(increase(codex_lb_proxy_tokens_total{kind=\"input\",model=~\"$model\"}[1h])), 1)",
+	          "expr": "(100 * sum(increase(codex_lb_proxy_tokens_total{kind=\"cached_input\",model=~\"$model\"}[1h])) / sum(increase(codex_lb_proxy_tokens_total{kind=\"input\",model=~\"$model\"}[1h]))) and on() (sum(increase(codex_lb_proxy_tokens_total{kind=\"input\",model=~\"$model\"}[1h])) > 0)",
           "interval": "1h"
         }
       ],
@@ -242,7 +242,7 @@
 	      "id": 6,
 	      "type": "timeseries",
 	      "title": "Error rate",
-	      "description": "Overall request error percentage for the selected filters. Formula: 100 * error_request_rate / total_request_rate over a 1h rate window.",
+		      "description": "Overall request error percentage for the selected filters. Formula: 100 * error_request_rate / total_request_rate over a 1h rate window. Zero-request windows render as a gap.",
 	      "gridPos": {
 	        "x": 12,
 	        "y": 15,
@@ -252,7 +252,7 @@
 	      "targets": [
 	        {
 	          "refId": "A",
-		          "expr": "100 * (sum(rate(codex_lb_proxy_requests_total{status=\"error\",model=~\"$model\",api=~\"$api\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h])))"
+			          "expr": "(100 * (sum(rate(codex_lb_proxy_requests_total{status=\"error\",model=~\"$model\",api=~\"$api\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h])))) and on() (sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h])) > 0)"
 	        }
 	      ],
 	      "fieldConfig": {
@@ -309,8 +309,8 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Cost/request (avg, USD)",
-      "description": "Average USD per request for the selected filters. Formula: cost_rate / request_rate using 1h rates.",
+      "title": "Cost/successful request (avg, USD)",
+      "description": "Average USD per successful request for the selected filters. Formula: cost_rate / successful_request_rate using 1h rates. No-success windows render as a gap.",
       "gridPos": {
         "x": 12,
         "y": 22,
@@ -320,7 +320,7 @@
       "targets": [
         {
           "refId": "A",
-	          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{model=~\"$model\",api=~\"$api\"}[1h]))"
+	          "expr": "(sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h])) / sum(rate(codex_lb_proxy_requests_total{status=\"success\",model=~\"$model\",api=~\"$api\"}[1h]))) and on() (sum(rate(codex_lb_proxy_requests_total{status=\"success\",model=~\"$model\",api=~\"$api\"}[1h])) > 0)"
         }
       ]
     },
@@ -439,7 +439,7 @@
 		      "id": 17,
 		      "type": "timeseries",
 		      "title": "Error rate by account (Top 10, %)",
-		      "description": "Top 10 accounts by request error percentage. Formula per account: 100 * account_error_request_rate / account_total_request_rate over a 1h rate window.",
+			      "description": "Top 10 accounts by request error percentage. Formula per account: 100 * account_error_request_rate / account_total_request_rate over a 1h rate window. Zero-request windows render as a gap.",
 		      "gridPos": {
 		        "x": 0,
 		        "y": 45,
@@ -449,7 +449,7 @@
 		      "targets": [
 			        {
 			          "refId": "A",
-	          "expr": "label_replace(topk(10, 100 * (sum by (account_id) (rate(codex_lb_proxy_account_requests_total{status=\"error\",account_id=~\"$account\",api=~\"$api\"}[1h])) / sum by (account_id) (rate(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1h])))) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
+          "expr": "label_replace(topk(10, ((100 * (sum by (account_id) (rate(codex_lb_proxy_account_requests_total{status=\"error\",account_id=~\"$account\",api=~\"$api\"}[1h])) / sum by (account_id) (rate(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1h])))) and on(account_id) (sum by (account_id) (rate(codex_lb_proxy_account_requests_total{account_id=~\"$account\",api=~\"$api\"}[1h])) > 0))) * on(account_id) group_left(display) ((codex_lb_account_identity @ end()) or on(account_id) label_replace(count by (account_id) (codex_lb_secondary_used_percent), \"display\", \"$1\", \"account_id\", \"(.*)\")), \"account_id\", \"$1\", \"display\", \"(.*)\")",
 	          "legendFormat": "{{display}}"
 	        }
 		      ],
