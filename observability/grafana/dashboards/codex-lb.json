@@ -1959,8 +1959,8 @@
 	      {
 	        "id": 35,
 	        "type": "timeseries",
-	        "title": "Today: cost/hr + projected EOD cost",
-	        "description": "Hourly cost for today plus projected end-of-day (EOD) cost. Projection is run-rate based and can swing early in the day.",
+	        "title": "Cost/hr (USD, total, 1h buckets)",
+	        "description": "Observed hourly cost buckets since midnight (browser timezone). Projected EOD is shown in the dedicated stat panel above.",
 	        "gridPos": {
 	          "x": 0,
 	          "y": 129,
@@ -1972,95 +1972,22 @@
 		      "fieldConfig": {
 		        "defaults": {
 		          "unit": "currencyUSD",
+		          "decimals": 2,
+		          "color": {
+		            "mode": "fixed",
+		            "fixedColor": "#1d4ed8"
+		          },
 		          "custom": {
-		            "drawStyle": "line",
-		            "lineWidth": 2,
-		            "fillOpacity": 10,
-		            "showPoints": "never"
+		            "drawStyle": "bars",
+		            "barAlignment": 0,
+		            "lineWidth": 0,
+		            "fillOpacity": 80,
+		            "showPoints": "never",
+		            "axisPlacement": "left",
+		            "axisLabel": "USD"
 		          }
 		        },
-		        "overrides": [
-		          {
-		            "matcher": {
-		              "id": "byName",
-		              "options": "Cost (USD, 1h)"
-		            },
-		            "properties": [
-		              {
-		                "id": "decimals",
-		                "value": 2
-		              },
-		              {
-		                "id": "color",
-		                "value": {
-		                  "mode": "fixed",
-		                  "fixedColor": "#1d4ed8"
-		                }
-		              },
-		              {
-		                "id": "custom.drawStyle",
-		                "value": "bars"
-		              },
-		              {
-		                "id": "custom.fillOpacity",
-		                "value": 80
-		              },
-		              {
-		                "id": "custom.lineWidth",
-		                "value": 0
-		              },
-		              {
-		                "id": "custom.barAlignment",
-		                "value": 0
-		              },
-		              {
-		                "id": "custom.axisPlacement",
-		                "value": "left"
-		              },
-	              {
-	                "id": "custom.axisLabel",
-	                "value": "USD"
-	              }
-	            ]
-		          },
-		          {
-		            "matcher": {
-		              "id": "byName",
-	              "options": "Projected EOD cost (USD)"
-	            },
-	            "properties": [
-	              {
-	                "id": "decimals",
-	                "value": 2
-	              },
-	              {
-	                "id": "color",
-	                "value": {
-	                  "mode": "fixed",
-	                  "fixedColor": "#f59e0b"
-	                }
-	              },
-	              {
-	                "id": "custom.lineStyle",
-	                "value": {
-	                  "dash": [
-	                    10,
-	                    10
-	                  ],
-	                  "fill": "dash"
-	                }
-	              },
-	              {
-	                "id": "custom.axisPlacement",
-	                "value": "left"
-	              },
-	              {
-	                "id": "custom.axisLabel",
-	                "value": "USD"
-	              }
-	            ]
-	          }
-	        ]
+		        "overrides": []
 	      },
 			      "targets": [
 			        {
@@ -2068,11 +1995,6 @@
 				          "expr": "sum(increase(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[1h]))",
 			          "interval": "1h",
 			          "legendFormat": "Cost (USD, 1h)"
-			        },
-			        {
-			          "refId": "C",
-			          "expr": "sum(rate(codex_lb_proxy_cost_usd_total{model=~\"$model\"}[$__rate_interval])) * 86400",
-			          "legendFormat": "Projected EOD cost (USD)"
 			        }
 		      ]
 		    }
