@@ -1812,7 +1812,7 @@
         "id": 32,
         "type": "row",
         "title": "Today (since 00:00, browser TZ)",
-        "description": "Today-only section anchored to local midnight (browser timezone).",
+        "description": "Today-only section anchored to local midnight (browser timezone). Note: if dashboard time is set to an absolute range, Grafana may apply that absolute window instead of this panel-relative override.",
         "gridPos": {
           "x": 0,
           "y": 124,
@@ -1826,7 +1826,7 @@
         "id": 33,
         "type": "stat",
         "title": "Cost — today so far",
-        "description": "Total cost accumulated so far today since local midnight (browser timezone).",
+        "description": "Total cost accumulated so far today since local midnight (browser timezone). Note: if dashboard time is set to an absolute range, Grafana may apply that absolute window instead of this panel-relative override.",
 	        "gridPos": {
 	          "x": 0,
 	          "y": 125,
@@ -1902,7 +1902,7 @@
 	        "id": 42,
 	        "type": "stat",
 	        "title": "Projected EOD cost (run-rate)",
-	        "description": "Projected end-of-day cost from current pace since midnight (run-rate estimate).",
+        "description": "Projected end-of-day cost from current pace since midnight (run-rate estimate). Note: if dashboard time is set to an absolute range, Grafana may apply that absolute window instead of this panel-relative override.",
 	        "gridPos": {
 	          "x": 12,
 	          "y": 125,
@@ -1960,7 +1960,7 @@
 	        "id": 35,
 	        "type": "timeseries",
 	        "title": "Cost/hr (USD, total, 1h buckets)",
-	        "description": "Observed hourly cost buckets since midnight (browser timezone). Projected EOD is shown in the dedicated stat panel above.",
+        "description": "Observed hourly cost buckets since midnight (browser timezone). Projected EOD is shown in the dedicated stat panel above. Note: if dashboard time is set to an absolute range, Grafana may apply that absolute window instead of this panel-relative override.",
 	        "gridPos": {
 	          "x": 0,
 	          "y": 129,
